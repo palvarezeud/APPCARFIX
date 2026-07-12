@@ -1,0 +1,17 @@
+<Solution>
+  <Folder Name="/Aplicacion/">
+    <Project Path="Aplicacion/CarFix.Aplicacion/CarFix.Aplicacion.csproj" />
+  </Folder>
+  <Folder Name="/Dominio/">
+    <Project Path="Dominio/CarFix.Dominio/CarFix.Dominio.csproj" />
+  </Folder>
+  <Folder Name="/Especificaciones/">
+    <Project Path="Especificaciones/CarFix.Especificaciones/CarFix.Especificaciones.csproj" />
+  </Folder>
+  <Folder Name="/Infraestructura/">
+    <Project Path="Infraestructura/CarFix.Infraestructura/CarFix.Infraestructura.csproj" />
+  </Folder>
+  <Folder Name="/WebApi/">
+    <Project Path="WebApi/CarFix.WebApi/CarFix.WebApi.csproj" />
+  </Folder>
+</Solution>

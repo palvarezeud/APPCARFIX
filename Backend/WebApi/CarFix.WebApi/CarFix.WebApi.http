@@ -1,0 +1,6 @@
+@CarFix.WebApi_HostAddress = http://localhost:5151
+
+GET {{CarFix.WebApi_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

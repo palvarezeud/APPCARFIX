@@ -1,0 +1,3954 @@
+hice cambios en la base de datos, puede correr de nuevo la skill y actualizar el documento
+
+● Skill(sync-db-docs)
+Successfully loaded skill
+
+Voy a extraer el esquema actual de la base de datos ejecutando todas las consultas en paralelo.
+
+  Ran 6 shell commands
+
+El módulo instalado no soporta -TrustServerCertificate. Voy a usar la cadena de conexión directamente.
+
+  Ran 1 shell command
+
+Funciona sin ese parámetro. Ahora ejecuto todas las consultas restantes en paralelo.
+
+  Ran 5 shell commands
+
+El query de catálogos no devolvió nada. Voy a revisar eso y leer el documento actual en paralelo.
+
+  Read 1 file, ran 1 shell command
+
+Tengo todos los datos. El esquema cambió significativamente. Voy a leer la documentación actual para hacer las ediciones precisas.
+
+Los cambios principales que detecto:
+- OrdenReparacion: eliminado Total, renombrado Garantia → EsGarantia, agregado FacturaID
+- Reparacion y Repuesto: cambiaron de OrdenReparacionID a FacturaID (ahora FK a Facturas)
+- Facturas: agregados OrdenReparacionID, Adelanto, ImpuestoVentas, EsProforma; eliminados RepuestoID y ReparacionID; ClienteID y EstadoFacturaID ahora tienen FK constraint
+- TipoReparacion: DuracionAproximada → DuracionAproximadaHoras
+- Nueva tabla Taller (ya estaba documentada)
+
+Actualizando el ERD primero:
+
+● Update(DATABASE_DOCUMENTATION.md)
+Added 23 lines, removed 25 lines
+
+```
+Clientes (1) ──────────────────────────── (N) Vehiculos
+                                                  │
+                                             (1) │
+                                                  │
+                                          (N) OrdenReparacion ──── EstadoOrden (1)
+                                                  │  │
+                                                  │  │
+                                          (N) Reparacion
+                                          │        │
+                                TipoReparacion*    │
+                                              (N) Repuesto
+    │ FK                                        │ FK (CASCADE)
+    │                                           │
+(N) Facturas ──── EstadoFactura (1)      (N) OrdenReparacion ──── EstadoOrden (1)
+    │  ↑                                        │
+    │  │  FK_OrdenReparacion_Facturas ──────────┘
+    │  │  (OrdenReparacion.FacturaID)
+    │
+    ├── (N) Reparacion ·············· TipoReparacion*
+    └── (N) Repuesto
+
+Facturas ····· Clientes*
+         ····· Vehiculos*
+         ····· EstadoFactura*
+         ····· Repuesto*
+         ····· Reparacion*
+
+Facturas.VehiculoID ············· Vehiculos* (FK lógica)
+Facturas.OrdenReparacionID ······ OrdenReparacion* (FK lógica)
+Taller  (independiente — configuración del sistema)
+```
+
+*Relación lógica sin FK constraint definido en la BD.*
+*FK lógica: relación sin constraint definido en la BD.*
+
+### Relaciones principales
+
+| Tabla hija        | FK Column          | Tabla padre      | PK Column          | ON DELETE  | ON UPDATE  |
+|-------------------|--------------------|------------------|--------------------|------------|------------|
+| `Vehiculos`       | `ClienteID`        | `Clientes`       | `ClienteID`        | CASCADE    | CASCADE    |
+| `OrdenReparacion` | `VehiculoID`       | `Vehiculos`      | `VehiculoID`       | CASCADE    | CASCADE    |
+| `OrdenReparacion` | `EstadoOrdenID`    | `EstadoOrden`    | `EstadoOrdenID`    | NO ACTION  | CASCADE    |
+| `Reparacion`      | `OrdenReparacionID`| `OrdenReparacion`| `OrdenReparacionID`| NO ACTION  | NO ACTION  |
+| `Repuesto`        | `OrdenReparacionID`| `OrdenReparacion`| `OrdenReparacionID`| CASCADE    | CASCADE    |
+| Tabla hija        | FK Column         | Tabla padre      | PK Column          | ON DELETE  | ON UPDATE  |
+|-------------------|-------------------|------------------|--------------------|------------|------------|
+| `Facturas`        | `ClienteID`       | `Clientes`       | `ClienteID`        | NO ACTION  | CASCADE    |
+| `Facturas`        | `EstadoFacturaID` | `EstadoFactura`  | `EstadoFacturaID`  | NO ACTION  | CASCADE    |
+| `OrdenReparacion` | `EstadoOrdenID`   | `EstadoOrden`    | `EstadoOrdenID`    | NO ACTION  | CASCADE    |
+| `OrdenReparacion` | `FacturaID`       | `Facturas`       | `FacturaID`        | NO ACTION  | NO ACTION  |
+| `OrdenReparacion` | `VehiculoID`      | `Vehiculos`      | `VehiculoID`       | CASCADE    | CASCADE    |
+| `Reparacion`      | `FacturaID`       | `Facturas`       | `FacturaID`        | CASCADE    | CASCADE    |
+| `Repuesto`        | `FacturaID`       | `Facturas`       | `FacturaID`        | CASCADE    | CASCADE    |
+| `Vehiculos`       | `ClienteID`       | `Clientes`       | `ClienteID`        | CASCADE    | CASCADE    |
+
+> **Nota:** La tabla `Facturas` no tiene ningún FK constraint definido en la BD — ni `ClienteID`, `VehiculoID`, `EstadoFacturaID`, `RepuestoID` ni `ReparacionID` están enforced por el motor. Todas las relaciones de `Fact
+uras` son lógicas. `Reparacion.TipoReparacionID` tampoco tiene FK constraint.
+> `Facturas.VehiculoID` y `Facturas.OrdenReparacionID` no tienen FK constraint — son relaciones lógicas. `Reparacion.TipoReparacionID` tampoco tiene FK constraint. Existe referencia circular entre `Facturas` y `OrdenRepa
+racion`: `OrdenReparacion.FacturaID` tiene FK enforced, pero `Facturas.OrdenReparacionID` es lógica.
+
+---
+
+
+> Donde habíamos quedado en el documento principal?
+
+Ahora actualizo la sección ## Tablas:
+
+● Update(DATABASE_DOCUMENTATION.md)
+Added 85 lines, removed 83 lines
+
+Almacena los clientes del taller, tanto personas naturales como empresas.
+
+| Columna         | Tipo           | Nulo | PK | Identity    | Default | Descripción                          |
+|-----------------|----------------|------|----|-------------|---------|--------------------------------------|
+| `ClienteID`     | `int`          | NO   | ✓  | ✓ (1,1)    |         | Identificador único del cliente      |
+| `NombreCliente` | `varchar(250)` | NO   |    |             |         | Nombre completo o razón social       |
+| `Telefono1`     | `varchar(50)`  | NO   |    |             |         | Teléfono principal                   |
+| `Telefono2`     | `varchar(50)`  | YES  |    |             |         | Teléfono secundario (opcional)       |
+| `Email`         | `varchar(250)` | YES  |    |             |         | Correo electrónico                   |
+| `Dirección`     | `varchar(MAX)` | YES  |    |             |         | Dirección física                     |
+| `Localización`  | `geography`    | YES  |    |             |         | Coordenadas geográficas (GPS)        |
+| `EsEmpresa`     | `bit`          | NO   |    |             | `((0))` | `1` = empresa, `0` = persona natural |
+| Columna         | Tipo           | Nulo | PK | Identity | Default | Descripción                          |
+|-----------------|----------------|------|----|----------|---------|--------------------------------------|
+| `ClienteID`     | `int`          | NO   | ✓  | ✓ (1,1) |         | Identificador único del cliente      |
+| `NombreCliente` | `varchar(250)` | NO   |    |          |         | Nombre completo o razón social       |
+| `Telefono1`     | `varchar(50)`  | NO   |    |          |         | Teléfono principal                   |
+| `Telefono2`     | `varchar(50)`  | YES  |    |          |         | Teléfono secundario (opcional)       |
+| `Email`         | `varchar(250)` | YES  |    |          |         | Correo electrónico                   |
+| `Dirección`     | `varchar(MAX)` | YES  |    |          |         | Dirección física                     |
+| `Localización`  | `geography`    | YES  |    |          |         | Coordenadas geográficas (GPS)        |
+| `EsEmpresa`     | `bit`          | NO   |    |          | `((0))` | `1` = empresa, `0` = persona natural |
+
+**Relaciones:** Un cliente puede tener múltiples vehículos. `Facturas.ClienteID` referencia esta tabla (FK lógica, sin constraint).
+**Relaciones:** Un cliente puede tener múltiples vehículos (`Vehiculos.ClienteID` FK). `Facturas.ClienteID` tiene FK constraint hacia esta tabla.
+
+---
+
+
+
+Registro de vehículos asociados a los clientes.
+
+| Columna             | Tipo           | Nulo | PK | Identity | Descripción                             |
+|---------------------|----------------|------|----|----------|-----------------------------------------|
+| `VehiculoID`        | `int`          | NO   | ✓  | ✓ (1,1) | Identificador único del vehículo        |
+| `Placa`             | `varchar(50)`  | YES  |    |          | Número de placa                         |
+| `Marca`             | `varchar(200)` | NO   |    |          | Marca del vehículo (Toyota, Ford, etc.) |
+| `Modelo`            | `varchar(200)` | YES  |    |          | Modelo específico                       |
+| `VIN`               | `varchar(MAX)` | YES  |    |          | Número de identificación vehicular      |
+| `Annio`             | `tinyint`      | YES  |    |          | Año del vehículo (0–255)                |
+| `Motor`             | `varchar(50)`  | YES  |    |          | Tipo/código de motor                    |
+| `EsAutomatico`      | `bit`          | NO   |    |          | `1` = automático, `0` = manual          |
+| `DetallesCarroceria`| `varchar(200)` | NO   |    |          | Descripción de la carrocería            |
+| `ClienteID`         | `int`          | NO   |    |          | FK → `Clientes.ClienteID`               |
+| Columna              | Tipo           | Nulo | PK | Identity | Descripción                             |
+|----------------------|----------------|------|----|----------|-----------------------------------------|
+| `VehiculoID`         | `int`          | NO   | ✓  | ✓ (1,1) | Identificador único del vehículo        |
+| `Placa`              | `varchar(50)`  | YES  |    |          | Número de placa                         |
+| `Marca`              | `varchar(200)` | NO   |    |          | Marca del vehículo (Toyota, Ford, etc.) |
+| `Modelo`             | `varchar(200)` | YES  |    |          | Modelo específico                       |
+| `VIN`                | `varchar(MAX)` | YES  |    |          | Número de identificación vehicular      |
+| `Annio`              | `tinyint`      | YES  |    |          | Año del vehículo (0–255)                |
+| `Motor`              | `varchar(50)`  | YES  |    |          | Tipo/código de motor                    |
+| `EsAutomatico`       | `bit`          | NO   |    |          | `1` = automático, `0` = manual          |
+| `DetallesCarroceria` | `varchar(200)` | NO   |    |          | Descripción de la carrocería            |
+| `ClienteID`          | `int`          | NO   |    |          | FK → `Clientes.ClienteID`               |
+
+**Relaciones:** FK a `Clientes` (CASCADE delete/update). Un vehículo puede tener múltiples `OrdenReparacion`.
+
+
+
+Documento central del sistema. Registra el ingreso de un vehículo al taller para ser atendido.
+
+| Columna             | Tipo           | Nulo | PK | Identity | Default  | Descripción                           |
+|---------------------|----------------|------|----|----------|----------|---------------------------------------|
+| `OrdenReparacionID` | `int`          | NO   | ✓  | ✓ (1,1) |          | Identificador único de la orden       |
+| `VehiculoID`        | `int`          | NO   |    |          |          | FK → `Vehiculos.VehiculoID`           |
+| `FechaIngreso`      | `datetime`     | NO   |    |          |          | Fecha y hora de ingreso del vehículo  |
+| `FechaSalida`       | `datetime`     | NO   |    |          |          | Fecha y hora de salida estimada/real  |
+| `ProblemaGeneral`   | `varchar(200)` | NO   |    |          |          | Descripción del problema reportado    |
+| `EstadoOrdenID`     | `int`          | NO   |    |          |          | FK → `EstadoOrden.EstadoOrdenID`      |
+| `Total`             | `money`        | NO   |    |          | `((0))`  | Total acumulado de la orden           |
+| `Garantia`          | `bit`          | NO   |    |          | `((0))`  | `1` = orden bajo garantía             |
+| Columna             | Tipo           | Nulo | PK | Identity | Default | Descripción                          |
+|---------------------|----------------|------|----|----------|---------|--------------------------------------|
+| `OrdenReparacionID` | `int`          | NO   | ✓  | ✓ (1,1) |         | Identificador único de la orden      |
+| `VehiculoID`        | `int`          | NO   |    |          |         | FK → `Vehiculos.VehiculoID`          |
+| `FechaIngreso`      | `datetime`     | NO   |    |          |         | Fecha y hora de ingreso del vehículo |
+| `FechaSalida`       | `datetime`     | NO   |    |          |         | Fecha y hora de salida estimada/real |
+| `ProblemaGeneral`   | `varchar(200)` | NO   |    |          |         | Descripción del problema reportado   |
+| `EstadoOrdenID`     | `int`          | NO   |    |          |         | FK → `EstadoOrden.EstadoOrdenID`     |
+| `EsGarantia`        | `bit`          | NO   |    |          | `((0))` | `1` = orden bajo garantía            |
+| `FacturaID`         | `int`          | NO   |    |          |         | FK → `Facturas.FacturaID`            |
+
+**Relaciones:** FK a `Vehiculos` (CASCADE delete/update) y a `EstadoOrden` (NO ACTION delete, CASCADE update). Una orden tiene múltiples `Reparacion` y múltiples `Repuesto`.
+**Relaciones:** FK a `Vehiculos` (CASCADE delete/update), a `EstadoOrden` (NO ACTION delete, CASCADE update) y a `Facturas` (NO ACTION delete/update).
+
+---
+
+### `Reparacion`
+
+Detalle de cada reparación o trabajo realizado dentro de una orden.
+Detalle de cada reparación o trabajo realizado. Ahora agrupa bajo una `Factura` (no bajo `OrdenReparacion` directamente).
+
+| Columna                 | Tipo           | Nulo | PK | Identity | Descripción                                      |
+|-------------------------|----------------|------|----|----------|--------------------------------------------------|
+| `ReparacionID`          | `int`          | NO   | ✓  | ✓ (1,1) | Identificador único de la reparación             |
+| `OrdenReparacionID`     | `int`          | NO   |    |          | FK → `OrdenReparacion.OrdenReparacionID`         |
+| `TipoReparacionID`      | `int`          | YES  |    |          | FK lógica → `TipoReparacion.CatalogoCostoID`     |
+| `DescripcionReparacion` | `varchar(MAX)` | YES  |    |          | Descripción detallada del trabajo                |
+| `Costo`                 | `money`        | YES  |    |          | Costo de esta reparación específica              |
+| `Descripcion`           | `varchar(200)` | YES  |    |          | Descripción corta/resumen                        |
+| Columna                 | Tipo           | Nulo | PK | Identity | Descripción                                  |
+|-------------------------|----------------|------|----|----------|----------------------------------------------|
+| `ReparacionID`          | `int`          | NO   | ✓  | ✓ (1,1) | Identificador único de la reparación         |
+| `FacturaID`             | `int`          | NO   |    |          | FK → `Facturas.FacturaID`                    |
+| `TipoReparacionID`      | `int`          | YES  |    |          | FK lógica → `TipoReparacion.CatalogoCostoID` |
+| `DescripcionReparacion` | `varchar(MAX)` | YES  |    |          | Descripción detallada del trabajo            |
+| `Costo`                 | `money`        | YES  |    |          | Costo de esta reparación específica          |
+| `Descripcion`           | `varchar(200)` | YES  |    |          | Descripción corta/resumen                    |
+
+**Relaciones:** FK a `OrdenReparacion` (NO ACTION delete/update). `TipoReparacionID` no tiene FK constraint definido.
+**Relaciones:** FK a `Facturas` (CASCADE delete/update). `TipoReparacionID` no tiene FK constraint definido.
+
+---
+
+### `Repuesto`
+
+Registro de repuestos o piezas utilizadas en una orden de reparación.
+Registro de repuestos o piezas utilizadas. Agrupa bajo una `Factura` (no bajo `OrdenReparacion` directamente).
+
+| Columna             | Tipo           | Nulo | PK | Identity | Descripción                                  |
+|---------------------|----------------|------|----|----------|----------------------------------------------|
+| `RepuestoID`        | `int`          | NO   | ✓  | ✓ (1,1) | Identificador único del repuesto             |
+| `OrdenReparacionID` | `int`          | NO   |    |          | FK → `OrdenReparacion.OrdenReparacionID`     |
+| `NombreRepuesto`    | `varchar(200)` | NO   |    |          | Nombre del repuesto o pieza                  |
+| `Costo`             | `money`        | YES  |    |          | Costo del repuesto                           |
+| `Fecha`             | `datetime`     | YES  |    |          | Fecha de adquisición o uso                   |
+| `Repuestera`        | `varchar(200)` | YES  |    |          | Proveedor o repuestera donde se adquirió     |
+| `Factura`           | `varchar(100)` | YES  |    |          | Número de factura del proveedor              |
+| Columna          | Tipo           | Nulo | PK | Identity | Descripción                              |
+|------------------|----------------|------|----|----------|------------------------------------------|
+| `RepuestoID`     | `int`          | NO   | ✓  | ✓ (1,1) | Identificador único del repuesto         |
+| `FacturaID`      | `int`          | NO   |    |          | FK → `Facturas.FacturaID`                |
+| `NombreRepuesto` | `varchar(200)` | NO   |    |          | Nombre del repuesto o pieza              |
+| `Costo`          | `money`        | YES  |    |          | Costo del repuesto                       |
+| `Fecha`          | `datetime`     | YES  |    |          | Fecha de adquisición o uso               |
+| `Repuestera`     | `varchar(200)` | YES  |    |          | Proveedor o repuestera donde se adquirió |
+| `Factura`        | `varchar(100)` | YES  |    |          | Número de factura del proveedor          |
+
+**Relaciones:** FK a `OrdenReparacion` (CASCADE delete/update).
+**Relaciones:** FK a `Facturas` (CASCADE delete/update).
+
+---
+
+### `Facturas`
+
+Documento de cobro al cliente. Resume los costos de reparaciones y repuestos.
+Documento de cobro al cliente. Hub central de reparaciones y repuestos; enlaza también con la orden de reparación.
+
+| Columna               | Tipo           | Nulo | PK | Identity | Descripción                                    |
+|-----------------------|----------------|------|----|----------|------------------------------------------------|
+| `FacturaID`           | `int`          | NO   | ✓  | ✓ (1,1) | Identificador único de la factura              |
+| `ClienteID`           | `int`          | NO   |    |          | FK lógica → `Clientes.ClienteID`              |
+| `VehiculoID`          | `int`          | NO   |    |          | FK lógica → `Vehiculos.VehiculoID`            |
+| `Fecha`               | `datetime`     | NO   |    |          | Fecha de emisión de la factura                 |
+| `NombreCliente`       | `varchar(200)` | NO   |    |          | Nombre del cliente (snapshot histórico)        |
+| `DescripcionGeneral`  | `varchar(MAX)` | NO   |    |          | Descripción general de los trabajos            |
+| `TotalRepuestos`      | `money`        | NO   |    |          | Subtotal de repuestos                          |
+| `TotalReparaciones`   | `money`        | NO   |    |          | Subtotal de reparaciones                       |
+| `Total`               | `money`        | NO   |    |          | Total general                                  |
+| `Descuento`           | `money`        | NO   |    |          | Monto de descuento aplicado                    |
+| `EstadoFacturaID`     | `int`          | NO   |    |          | FK lógica → `EstadoFactura.EstadoFacturaID`   |
+| `RepuestoID`          | `int`          | NO   |    |          | FK lógica → `Repuesto.RepuestoID`             |
+| `ReparacionID`        | `int`          | NO   |    |          | FK lógica → `Reparacion.ReparacionID`         |
+| Columna              | Tipo           | Nulo | PK | Identity | Default | Descripción                                  |
+|----------------------|----------------|------|----|----------|---------|----------------------------------------------|
+| `FacturaID`          | `int`          | NO   | ✓  | ✓ (1,1) |         | Identificador único de la factura            |
+| `ClienteID`          | `int`          | NO   |    |          |         | FK → `Clientes.ClienteID`                    |
+| `OrdenReparacionID`  | `int`          | NO   |    |          |         | FK lógica → `OrdenReparacion.OrdenReparacionID` |
+| `VehiculoID`         | `int`          | NO   |    |          |         | FK lógica → `Vehiculos.VehiculoID`           |
+| `Fecha`              | `datetime`     | NO   |    |          |         | Fecha de emisión de la factura               |
+| `NombreCliente`      | `varchar(200)` | NO   |    |          |         | Nombre del cliente (snapshot histórico)      |
+| `DescripcionGeneral` | `varchar(MAX)` | NO   |    |          |         | Descripción general de los trabajos          |
+| `TotalRepuestos`     | `money`        | NO   |    |          |         | Subtotal de repuestos                        |
+| `TotalReparaciones`  | `money`        | NO   |    |          |         | Subtotal de reparaciones                     |
+| `Total`              | `money`        | NO   |    |          |         | Total general                                |
+| `Descuento`          | `money`        | NO   |    |          |         | Monto de descuento aplicado                  |
+| `Adelanto`           | `money`        | NO   |    |          | `((0))` | Monto de adelanto o depósito recibido        |
+| `ImpuestoVentas`     | `money`        | NO   |    |          | `((0))` | Impuesto de ventas aplicado                  |
+| `EstadoFacturaID`    | `int`          | NO   |    |          |         | FK → `EstadoFactura.EstadoFacturaID`         |
+| `EsProforma`         | `bit`          | NO   |    |          | `((0))` | `1` = factura proforma (cotización previa)   |
+
+**Relaciones:** Ninguna FK enforced por el motor. Todas las referencias son lógicas.
+**Relaciones:** FK a `Clientes` (NO ACTION delete, CASCADE update) y a `EstadoFactura` (NO ACTION delete, CASCADE update). `OrdenReparacionID` y `VehiculoID` son FK lógicas sin constraint. Tiene N `Reparacion` y N `Repu
+esto` que la referencian. `OrdenReparacion.FacturaID` la referencia con FK enforced.
+
+> **Observación:** Ninguna columna de `Facturas` tiene FK constraint definido en la BD. El motor no garantiza integridad referencial en ninguna de sus referencias.
+> **Observación:** Existe referencia circular: `Facturas.OrdenReparacionID` apunta a `OrdenReparacion`, y `OrdenReparacion.FacturaID` apunta de vuelta a `Facturas` (con FK enforced). El orden de inserción requiere crear
+ la `Factura` primero (posiblemente como proforma), luego la `OrdenReparacion`, y finalmente actualizar `Facturas.OrdenReparacionID`.
+
+---
+
+
+
+Catálogo de tipos de reparación con costos base y duración estimada.
+
+| Columna                 | Tipo           | Nulo | PK | Descripción                               |
+|-------------------------|----------------|------|----|-------------------------------------------|
+| `CatalogoCostoID`       | `int`          | NO   | ✓  | Identificador del tipo de reparación      |
+| `DescripcionReparacion` | `varchar(MAX)` | NO   |    | Descripción del tipo de trabajo           |
+| `DuracionAproximada`    | `int`          | NO   |    | Duración estimada (en minutos/horas)      |
+| `CostoBase`             | `money`        | NO   |    | Costo referencial base del servicio       |
+| Columna                  | Tipo           | Nulo | PK | Descripción                               |
+|--------------------------|----------------|------|----|-------------------------------------------|
+| `CatalogoCostoID`        | `int`          | NO   | ✓  | Identificador del tipo de reparación      |
+| `DescripcionReparacion`  | `varchar(MAX)` | NO   |    | Descripción del tipo de trabajo           |
+| `DuracionAproximadaHoras`| `int`          | NO   |    | Duración estimada en horas                |
+| `CostoBase`              | `money`        | NO   |    | Costo referencial base del servicio       |
+
+> **Observación de naming:** El PK se llama `CatalogoCostoID` en lugar de `TipoReparacionID`. Considerar renombrar para consistencia con el resto del esquema.
+
+
+
+Catálogo de estados posibles de una factura. Tabla vacía actualmente.
+
+| Columna            | Tipo       | Nulo | PK | Descripción                   |
+|--------------------|------------|------|----|-------------------------------|
+| `EstadoFacturaID`  | `int`      | NO   | ✓  | Identificador del estado      |
+| `Descipcion`       | `nchar(10)`| NO   |    | Descripción del estado        |
+| Columna           | Tipo        | Nulo | PK | Descripción              |
+|-------------------|-------------|------|----|--------------------------|
+| `EstadoFacturaID` | `int`       | NO   | ✓  | Identificador del estado |
+| `Descipcion`      | `nchar(10)` | NO   |    | Descripción del estado   |
+
+> **Observaciones:** Typo en `Descipcion` (falta la `r`). `nchar(10)` es demasiado corto para descripciones como "Pendiente de pago".
+
+
+DATABASE_DOCUMENTATION.md actualizado con todos los cambios del esquema.
+
+Respecto a tu pregunta sobre el documento principal — ¿te referís a PENDIENTES.md? Déjame revisarlo.
+
+  Read 1 file
+
+Con los cambios que hiciste en la BD, varios ítems de PENDIENTES.md ya se completaron. Te muestro el estado actual:
+
+Completados (por los cambios que hiciste):
+- ✅ Impuesto a Facturas → se llama ImpuestoVentas
+- ✅ OrdenReparacionID a Facturas → agregado (FK lógica)
+- ✅ Facturas.RepuestoID / ReparacionID → rediseñado: Reparacion y Repuesto ahora tienen FacturaID con FK enforced hacia Facturas
+
+Aún pendientes:
+- [ ] Tabla Usuarios y Roles
+- [ ] FK constraint Reparacion.TipoReparacionID → TipoReparacion.CatalogoCostoID
+- [ ] Corregir typo EstadoFactura.Descipcion → Descripcion
+- [ ] Vehiculos.Annio de tinyint a smallint
+- [ ] Renombrar TipoReparacion.CatalogoCostoID → TipoReparacionID
+- [ ] Campo Cantidad en Repuesto
+
+¿Quieres que actualice PENDIENTES.md marcando los completados, o preferís continuar con alguno de los pendientes?
+
+✻ Baked for 11m 39s
+
+> vamos a hacer algo nuevo
+
+Contame, ¿qué tenés en mente?
+
+✻ Worked for 2s
+
+> hay un archivo nuevo en la carpeta .claude que se llama "angular_buenas_practicas.md" favor analizarlo y ubicarlo correctamente para utilizarlo más adelante, no sé si debe ser un skill o dónde se puede ubicar
+
+Voy a leer el archivo para entender su contenido y decidir dónde va mejor.
+
+  Searched for 2 patterns, read 1 file
+
+No lo encuentro dentro del proyecto. ¿Puede estar en la carpeta global C:\Users\palvareze\.claude?
+
+  Searched for 2 patterns
+
+No encuentro el archivo. Puede que esté en el paste-cache (fue copiado recientemente). Déjame verificar.
+
+  Read 2 files, ran 2 shell commands
+
+Encontrado: está en la raíz del proyecto, no dentro de .claude. Déjame leerlo.
+
+  Read 1 file
+
+Entendido el contenido. Es una guía de referencia con patrones que Claude debe seguir al escribir código Angular, no un skill invocable. La diferencia es importante:
+
+- Skill (/nombre) → se activa manualmente para ejecutar una acción específica
+- Referencia en CLAUDE.md → Claude la carga automáticamente en cada conversación y la aplica cuando escribe código Angular
+
+Lo mejor aquí es:
+1. Limpiar el archivo (tiene artefactos de formato: "Archivo generado exitosamente" y bloques de código duplicados)
+2. Moverlo a .claude/angular_buenas_practicas.md (organizado junto a los skills)
+3. Importarlo en CLAUDE.md con @.claude/angular_buenas_practicas.md para que se cargue automáticamente
+
+¿Lo hago así?
+
+✻ Cooked for 1m 20s
+
+> Si
+
+Voy a limpiar el archivo, moverlo y actualizar CLAUDE.md en paralelo.
+
+● Write(.claude\angular_buenas_practicas.md)
+Wrote 267 lines to .claude\angular_buenas_practicas.md
+ Guía de Buenas Prácticas en Angular 21 (Modern Angular)
+
+sta guía detalla las mejores prácticas y patrones arquitectónicos recomendados para el desarrollo de aplicaciones robustas, escalables y eficientes utilizando **Angular 21**. El enfoque principal es adoptar las caracterís
+icas modernas del framework y **evitar características obsoletas (deprecated) o heredadas** de versiones antiguas.
+
+--
+
+# 1. Arquitectura y Estructura de Archivos
+
+## Práctica Moderna: Componentes Standalone (Por Defecto)
+… +259 lines
+
+Ahora agrego la sección en CLAUDE.md con el import:
+
+  Read 1 file
+
+● Update(CLAUDE.md)
+Added 8 lines, removed 1 line
+|---------|-------------|
+| `/sync-db-docs` | Conecta a `CAR_FIX` y regenera `DATABASE_DOCUMENTATION.md` con el esquema actual. Usar después de cualquier cambio en la BD. |
+
+## 7. Estructura del Proyecto
+## 7. Frontend Angular
+
+El frontend se desarrollará con **Angular 21**. Al escribir cualquier código Angular, seguir obligatoriamente las convenciones de esta guía:
+
+@.claude/angular_buenas_practicas.md
+
+## 8. Estructura del Proyecto
+
+```
+AppCarFix/
+├── CLAUDE.md                    # Este archivo
+
+├── PENDIENTES.md               # Lista de pendientes (BD + desarrollo)
+└── .claude/
+    ├── settings.json
+    ├── angular_buenas_practicas.md  # Guía de buenas prácticas Angular 21
+    └── skills/
+        └── sync-db-docs/
+            └── SKILL.md        # Skill: regenerar documentación de BD
+
+Listo. Ahora eliminamos el archivo original de la raíz del proyecto:
+
+  Ran 1 shell command
+
+Todo queda así:
+
+- Limpiado: se eliminaron los artefactos de formato del archivo original
+- Movido: Angular_Buenas_Practicas.md → .claude/angular_buenas_practicas.md
+- Integrado: CLAUDE.md ahora tiene una sección "7. Frontend Angular" con @.claude/angular_buenas_practicas.md — esto hace que Claude cargue automáticamente la guía en cada conversación, sin que tengas que pedirlo
+
+A partir de ahora, cuando escribamos código Angular para el proyecto, se seguirán esas convenciones (Signals, standalone, inject(), @if/@for, etc.) de forma automática.
+
+✻ Worked for 1m 21s
+
+> Me puede crear un archivo similar a ese pero para Arquitectura Limpia con los mejores patrones y practicas para crear el backend del proyecto
+
+Antes de escribirlo, necesito confirmar el stack del backend para que los ejemplos sean precisos.
+
+● User answered Claude's questions:
+· ¿Cuál será el lenguaje/framework del backend? → ASP.NET Core (C#)
+
+Perfecto. Voy a crear la guía completa para ASP.NET Core con Clean Architecture.
+
+● Write(.claude\arquitectura_limpia_backend.md)
+Wrote 595 lines to .claude\arquitectura_limpia_backend.md
+ Guía de Arquitectura Limpia — Backend ASP.NET Core (C#)
+
+sta guía define los patrones y convenciones arquitectónicas para el backend del proyecto CAR_FIX. El objetivo es mantener el código desacoplado, testeable y fácil de extender sin tocar capas que no corresponden.
+
+--
+
+# 1. Estructura de la Solución
+
+a solución se divide en **4 proyectos** que representan las capas de Clean Architecture. Las dependencias solo fluyen hacia adentro: API → Application → Domain. Infrastructure implementa las interfaces definidas en las ca
+as interiores.
+… +586 lines
+
+Ahora lo integro en CLAUDE.md:
+
+● Update(CLAUDE.md)
+Added 9 lines, removed 2 lines
+
+@.claude/angular_buenas_practicas.md
+
+## 8. Estructura del Proyecto
+## 8. Backend ASP.NET Core
+
+El backend se desarrollará con **ASP.NET Core (C#)** siguiendo Arquitectura Limpia (Clean Architecture). Al escribir cualquier código backend, seguir obligatoriamente los patrones de esta guía:
+
+@.claude/arquitectura_limpia_backend.md
+
+## 9. Estructura del Proyecto
+
+```
+AppCarFix/
+├── CLAUDE.md                    # Este archivo
+
+├── PENDIENTES.md               # Lista de pendientes (BD + desarrollo)
+└── .claude/
+    ├── settings.json
+    ├── angular_buenas_practicas.md  # Guía de buenas prácticas Angular 21
+    ├── angular_buenas_practicas.md      # Guía de buenas prácticas Angular 21
+    ├── arquitectura_limpia_backend.md   # Guía de Arquitectura Limpia ASP.NET Core
+    └── skills/
+        └── sync-db-docs/
+            └── SKILL.md        # Skill: regenerar documentación de BD
+
+Listo. La guía cubre:
+
+1. Estructura de la solución — 4 proyectos con flujo de dependencias unidireccional
+2. Domain — Entidades ricas con comportamiento, interfaces de repositorio, DomainException
+3. Application — CQRS con MediatR, patrón Result<T>, validación con FluentValidation y pipeline automático
+4. Infrastructure — EF Core con Fluent API, repositorios, Unit of Work
+5. API — Minimal API, middleware de errores global, Program.cs limpio
+6. Anti-patrones — tabla de qué evitar y por qué
+7. Cheat sheet — resumen de responsabilidades por capa
+
+Todo queda importado en CLAUDE.md con @.claude/arquitectura_limpia_backend.md, así se carga automáticamente en cada conversación cuando trabajemos en el backend.
+
+✻ Crunched for 2m 1s
+
+> Si, el backend será en C# con web api en asp.net core net 10
+
+Voy a actualizar la guía para usar las APIs específicas de .NET 10 (OpenAPI nativo, TypedResults, ProblemDetails integrado) y también el CLAUDE.md.
+
+● Update(.claude\arquitectura_limpia_backend.md)
+Added 2 lines, removed 2 lines
+# Guía de Arquitectura Limpia — Backend ASP.NET Core (C#)
+# Guía de Arquitectura Limpia — Backend ASP.NET Core (.NET 10 / C#)
+
+Esta guía define los patrones y convenciones arquitectónicas para el backend del proyecto CAR_FIX. El objetivo es mantener el código desacoplado, testeable y fácil de extender sin tocar capas que no corresponden.
+Esta guía define los patrones y convenciones arquitectónicas para el backend del proyecto CAR_FIX usando **ASP.NET Core Web API con .NET 10**. El objetivo es mantener el código desacoplado, testeable y fácil de extender s
+in tocar capas que no corresponden.
+
+---
+
+
+● Update(.claude\arquitectura_limpia_backend.md)
+Added 20 lines, removed 10 lines
+
+Punto de entrada HTTP. Los controladores son delegadores: reciben la request, llaman a MediatR y devuelven la respuesta. **Cero lógica de negocio aquí.**
+
+### Minimal API (Enfoque Moderno)
+### Minimal API con `TypedResults` (.NET 10)
+
+En .NET 10 se usa `TypedResults` (en lugar de `Results`) para que los endpoints puedan inferir el tipo de respuesta en el esquema OpenAPI generado automáticamente.
+
+```csharp
+// CarFix.API/Endpoints/OrdenesEndpoints.cs
+public static class OrdenesEndpoints
+{
+    public static void MapOrdenes(this IEndpointRouteBuilder app)
+    {
+        var group = app.MapGroup("/api/ordenes").WithTags("Ordenes");
+        var group = app.MapGroup("/api/ordenes")
+                       .WithTags("Ordenes")
+                       .WithOpenApi();
+
+        group.MapGet("{id:int}", async (int id, ISender sender) =>
+        group.MapGet("{id:int}", async Task<Results<Ok<OrdenReparacionDto>, NotFound<string>>>
+            (int id, ISender sender) =>
+        {
+            var result = await sender.Send(new GetOrdenByIdQuery(id));
+            return result.IsSuccess
+                ? Results.Ok(result.Value)
+                : Results.NotFound(result.Error);
+        });
+                ? TypedResults.Ok(result.Value)
+                : TypedResults.NotFound(result.Error);
+        })
+        .WithName("GetOrdenById")
+        .WithSummary("Obtiene una orden de reparación por ID");
+
+        group.MapPost("/", async (CrearOrdenCommand cmd, ISender sender) =>
+        group.MapPost("/", async Task<Results<Created<int>, BadRequest<string>>>
+            (CrearOrdenCommand cmd, ISender sender) =>
+        {
+            var result = await sender.Send(cmd);
+            return result.IsSuccess
+                ? Results.Created($"/api/ordenes/{result.Value}", result.Value)
+                : Results.BadRequest(result.Error);
+        });
+                ? TypedResults.Created($"/api/ordenes/{result.Value}", result.Value)
+                : TypedResults.BadRequest(result.Error);
+        })
+        .WithName("CrearOrden")
+        .WithSummary("Crea una nueva orden de reparación");
+    }
+}
+```
+
+● Update(.claude\arquitectura_limpia_backend.md)
+Added 40 lines, removed 32 lines
+}
+```
+
+### Middleware de Manejo de Errores Global
+### Manejo de Errores Global con `IExceptionHandler` (.NET 10)
+
+.NET 10 incluye `IExceptionHandler` y `ProblemDetails` de forma nativa. No se necesita middleware manual.
+
+```csharp
+// CarFix.API/Middleware/ExceptionHandlingMiddleware.cs
+public class ExceptionHandlingMiddleware
+// CarFix.API/Exceptions/GlobalExceptionHandler.cs
+public class GlobalExceptionHandler : IExceptionHandler
+{
+    private readonly RequestDelegate _next;
+    private readonly ILogger<ExceptionHandlingMiddleware> _logger;
+    private readonly ILogger<GlobalExceptionHandler> _logger;
+
+    public ExceptionHandlingMiddleware(RequestDelegate next, ILogger<ExceptionHandlingMiddleware> logger)
+    {
+        _next   = next;
+        _logger = logger;
+    }
+    public GlobalExceptionHandler(ILogger<GlobalExceptionHandler> logger)
+        => _logger = logger;
+
+    public async Task InvokeAsync(HttpContext ctx)
+    public async ValueTask<bool> TryHandleAsync(
+        HttpContext ctx,
+        Exception   exception,
+        CancellationToken ct)
+    {
+        try
+        var (statusCode, title, detail) = exception switch
+        {
+            await _next(ctx);
+        }
+        catch (ValidationException ex)
+            ValidationException ex => (
+                StatusCodes.Status400BadRequest,
+                "Validation error",
+                string.Join("; ", ex.Errors.Select(e => e.ErrorMessage))),
+
+            DomainException ex => (
+                StatusCodes.Status422UnprocessableEntity,
+                "Domain rule violation",
+                ex.Message),
+
+            _ => (
+                StatusCodes.Status500InternalServerError,
+                "Internal server error",
+                "An unexpected error occurred.")
+        };
+
+        if (statusCode == 500)
+            _logger.LogError(exception, "Unhandled exception");
+
+        ctx.Response.StatusCode = statusCode;
+        await ctx.Response.WriteAsJsonAsync(new ProblemDetails
+        {
+            ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
+            await ctx.Response.WriteAsJsonAsync(new
+            {
+                Errors = ex.Errors.Select(e => new { e.PropertyName, e.ErrorMessage })
+            });
+        }
+        catch (DomainException ex)
+        {
+            ctx.Response.StatusCode = StatusCodes.Status422UnprocessableEntity;
+            await ctx.Response.WriteAsJsonAsync(new { Error = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error no controlado");
+            ctx.Response.StatusCode = StatusCodes.Status500InternalServerError;
+            await ctx.Response.WriteAsJsonAsync(new { Error = "Error interno del servidor." });
+        }
+            Status = statusCode,
+            Title  = title,
+            Detail = detail
+        }, ct);
+
+        return true;
+    }
+}
+```
+
+● Update(.claude\arquitectura_limpia_backend.md)
+Added 11 lines, removed 8 lines
+}
+```
+
+### Program.cs
+### Program.cs (.NET 10)
+
+.NET 10 incluye OpenAPI nativo (`MapOpenApi`). No se usa Swashbuckle.
+
+```csharp
+// CarFix.API/Program.cs
+var builder = WebApplication.CreateBuilder(args);
+
+    .AddApplication()
+    .AddInfrastructure(builder.Configuration);
+
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
+// ProblemDetails e IExceptionHandler nativos de .NET 10
+builder.Services.AddProblemDetails();
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+
+// OpenAPI nativo (sin Swashbuckle)
+builder.Services.AddOpenApi();
+
+var app = builder.Build();
+
+app.UseMiddleware<ExceptionHandlingMiddleware>();
+app.UseExceptionHandler();
+
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
+    app.MapOpenApi(); // Expone /openapi/v1.json
+
+app.UseHttpsRedirection();
+
+
+Ahora actualizo CLAUDE.md para reflejar .NET 10 y guardo la memoria del stack:
+
+● Update(CLAUDE.md)
+Added 1 line, removed 1 line
+
+## 8. Backend ASP.NET Core
+
+El backend se desarrollará con **ASP.NET Core (C#)** siguiendo Arquitectura Limpia (Clean Architecture). Al escribir cualquier código backend, seguir obligatoriamente los patrones de esta guía:
+El backend se desarrollará con **ASP.NET Core Web API, .NET 10, C#** siguiendo Arquitectura Limpia (Clean Architecture). Al escribir cualquier código backend, seguir obligatoriamente los patrones de esta guía:
+
+@.claude/arquitectura_limpia_backend.md
+
+
+  Recalled 1 memory, wrote 3 memories
+
+Listo. Los cambios específicos para .NET 10 que se aplicaron en la guía:
+
+┌────────────────────┬───────────────────────────────────────────────┬─────────────────────────────────────────────────────────────────────────┐
+│        Área        │               Antes (genérico)                │                             Ahora (.NET 10)                             │
+├────────────────────┼───────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────┤
+│ OpenAPI            │ Swashbuckle + AddSwaggerGen                   │ AddOpenApi() + MapOpenApi() nativo                                      │
+├────────────────────┼───────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────┤
+│ Manejo de errores  │ Middleware manual ExceptionHandlingMiddleware │ IExceptionHandler + AddExceptionHandler<T>()                            │
+├────────────────────┼───────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────┤
+│ Respuestas tipadas │ Results.Ok() / Results.NotFound()             │ TypedResults.Ok() con tipo de retorno explícito para inferencia OpenAPI │
+├────────────────────┼───────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────┤
+│ ProblemDetails     │ Manual                                        │ AddProblemDetails() nativo                                              │
+└────────────────────┴───────────────────────────────────────────────┴─────────────────────────────────────────────────────────────────────────┘
+
+El stack quedó guardado en memoria para que lo recuerde en futuras conversaciones.
+
+✻ Churned for 2m 17s
+
+> Un detalle importante, los nombres de los proyectos y la programación debe ser en español pero sin utilizar caracteres especiales como tildes ni ñ, en su lugar sustituir por ejemplo año sería annio
+
+Importante convención. Voy a documentarla en CLAUDE.md, actualizar los ejemplos del backend (donde hay nombres en inglés como GetOrdenById, GetAllAsync, etc.) y guardarla en memoria.
+
+  Read 1 file
+
+Son bastantes cambios distribuidos por todo el archivo. Voy a reescribirlo completo con la convención aplicada consistentemente, y de paso agrego una sección de convenciones de nomenclatura al inicio.
+
+● Write(.claude\arquitectura_limpia_backend.md)
+Added 207 lines, removed 201 lines
+
+---
+
+## 0. Convenciones de Nomenclatura
+
+**Todo el código se escribe en español, sin caracteres especiales.**
+
+- Sin tildes: `fecha` no `fécha`, `numero` no `número`
+- Sin ñ: sustituir por `nn` seguido de la vocal — ejemplo: `annio` en lugar de `año`, `espannol` en lugar de `español`
+- Los sufijos de patrones técnicos reconocidos pueden quedar en inglés: `Repository`, `Handler`, `Validator`, `Command`, `Query`, `Dto`, `Configuration`, `Exception`
+
+| Elemento | Convención | Ejemplo |
+|---|---|---|
+| Clases de dominio | PascalCase español | `OrdenReparacion`, `ExcepcionDominio` |
+| Interfaces | `I` + PascalCase español | `IRepositorioOrden`, `IUnidadTrabajo` |
+| Métodos | PascalCase español | `ObtenerPorIdAsync`, `AgregarAsync` |
+| Propiedades | PascalCase español | `EsExitoso`, `FechaIngreso` |
+| Variables locales | camelCase español | `ordenActual`, `totalRepuestos` |
+| Parámetros | camelCase español | `vehiculoId`, `problemaGeneral` |
+| Carpetas de features | PascalCase español | `CrearOrden/`, `ObtenerOrdenPorId/` |
+
+---
+
+## 1. Estructura de la Solución
+
+La solución se divide en **4 proyectos** que representan las capas de Clean Architecture. Las dependencias solo fluyen hacia adentro: API → Application → Domain. Infrastructure implementa las interfaces definidas en las
+capas interiores.
+
+```text
+CarFix.sln
+├── CarFix.Domain/           # Núcleo del negocio — sin dependencias externas
+├── CarFix.Domain/           # Nucleo del negocio — sin dependencias externas
+├── CarFix.Application/      # Casos de uso — depende solo de Domain
+├── CarFix.Infrastructure/   # Acceso a datos y servicios externos — implementa interfaces de Application
+└── CarFix.API/              # Punto de entrada HTTP — depende de Application e Infrastructure
+
+
+Contiene las entidades de negocio, value objects y las interfaces de repositorio. **Cero dependencias NuGet** salvo las del runtime base.
+
+### Entidades Ricas (No Anémicas)
+### Entidades Ricas (No Anemicas)
+
+Las entidades encapsulan su propio comportamiento. Los setters son privados; el estado cambia solo a través de métodos con nombres de dominio.
+
+```csharp
+// CarFix.Domain/Entities/OrdenReparacion.cs
+// CarFix.Domain/Entidades/OrdenReparacion.cs
+public class OrdenReparacion
+{
+    public int OrdenReparacionID { get; private set; }
+    public int VehiculoID       { get; private set; }
+    public int EstadoOrdenID    { get; private set; }
+    public DateTime FechaIngreso { get; private set; }
+    public string ProblemaGeneral { get; private set; }
+    public int      OrdenReparacionID { get; private set; }
+    public int      VehiculoID        { get; private set; }
+    public int      EstadoOrdenID     { get; private set; }
+    public DateTime FechaIngreso      { get; private set; }
+    public string   ProblemaGeneral   { get; private set; } = string.Empty;
+
+    private readonly List<Reparacion> _reparaciones = new();
+    public IReadOnlyList<Reparacion> Reparaciones => _reparaciones.AsReadOnly();
+
+    public static OrdenReparacion Crear(int vehiculoId, string problemaGeneral, int estadoInicialId)
+    {
+        if (string.IsNullOrWhiteSpace(problemaGeneral))
+            throw new DomainException("El problema general es requerido.");
+            throw new ExcepcionDominio("El problema general es requerido.");
+
+        return new OrdenReparacion
+        {
+            VehiculoID     = vehiculoId,
+            VehiculoID      = vehiculoId,
+            ProblemaGeneral = problemaGeneral,
+            EstadoOrdenID  = estadoInicialId,
+            FechaIngreso   = DateTime.UtcNow
+            EstadoOrdenID   = estadoInicialId,
+            FechaIngreso    = DateTime.UtcNow
+        };
+    }
+
+    public void AgregarReparacion(Reparacion reparacion)
+    {
+        _reparaciones.Add(reparacion);
+    }
+        => _reparaciones.Add(reparacion);
+
+    public void CambiarEstado(int nuevoEstadoId)
+    {
+        EstadoOrdenID = nuevoEstadoId;
+    }
+        => EstadoOrdenID = nuevoEstadoId;
+}
+```
+
+### Interfaces de Repositorio
+
+Los contratos de persistencia se definen en Domain (o Application). Infrastructure los implementa.
+Los contratos de persistencia se definen en Domain. Infrastructure los implementa. Métodos con nombres del dominio, en español.
+
+```csharp
+// CarFix.Domain/Interfaces/IOrdenReparacionRepository.cs
+public interface IOrdenReparacionRepository
+// CarFix.Domain/Interfaces/IRepositorioOrdenReparacion.cs
+public interface IRepositorioOrdenReparacion
+{
+    Task<OrdenReparacion?> GetByIdAsync(int id, CancellationToken ct = default);
+    Task<IEnumerable<OrdenReparacion>> GetAllAsync(CancellationToken ct = default);
+    Task AddAsync(OrdenReparacion orden, CancellationToken ct = default);
+    void Update(OrdenReparacion orden);
+    Task<OrdenReparacion?>            ObtenerPorIdAsync(int id, CancellationToken ct = default);
+    Task<IEnumerable<OrdenReparacion>> ObtenerTodosAsync(CancellationToken ct = default);
+    Task                              AgregarAsync(OrdenReparacion orden, CancellationToken ct = default);
+    void                              Actualizar(OrdenReparacion orden);
+}
+```
+
+### Excepción de Dominio
+### Excepcion de Dominio
+
+```csharp
+// CarFix.Domain/Exceptions/DomainException.cs
+public class DomainException : Exception
+// CarFix.Domain/Excepciones/ExcepcionDominio.cs
+public class ExcepcionDominio : Exception
+{
+    public DomainException(string message) : base(message) { }
+    public ExcepcionDominio(string mensaje) : base(mensaje) { }
+}
+```
+
+---
+
+## 3. Capa de Aplicación (`CarFix.Application`)
+## 3. Capa de Aplicacion (`CarFix.Application`)
+
+Orquesta los casos de uso. Usa **CQRS con MediatR** para separar lecturas de escrituras. Depende solo de `CarFix.Domain`.
+
+
+- `FluentValidation`
+- `FluentValidation.DependencyInjectionExtensions`
+
+### Patrón Result
+### Patron Resultado
+
+Nunca lanzar excepciones para controlar flujo de negocio. Usar `Result<T>` para comunicar éxito o error de forma explícita.
+Nunca lanzar excepciones para controlar flujo de negocio. Usar `Resultado<T>` para comunicar exito o error de forma explicita.
+
+```csharp
+// CarFix.Application/Common/Result.cs
+public class Result<T>
+// CarFix.Application/Comun/Resultado.cs
+public class Resultado<T>
+{
+    public bool IsSuccess { get; }
+    public T?   Value     { get; }
+    public string? Error  { get; }
+    public bool    EsExitoso { get; }
+    public T?      Valor     { get; }
+    public string? Error     { get; }
+
+    private Result(T value)               { IsSuccess = true;  Value = value; }
+    private Result(string error)          { IsSuccess = false; Error = error; }
+    private Resultado(T valor)         { EsExitoso = true;  Valor = valor; }
+    private Resultado(string error)    { EsExitoso = false; Error = error; }
+
+    public static Result<T> Success(T value)   => new(value);
+    public static Result<T> Failure(string error) => new(error);
+    public static Resultado<T> Exito(T valor)      => new(valor);
+    public static Resultado<T> Fallo(string error) => new(error);
+}
+
+public class Result
+public class Resultado
+{
+    public bool   IsSuccess { get; }
+    public string? Error    { get; }
+    public bool    EsExitoso { get; }
+    public string? Error     { get; }
+
+    private Result(bool success, string? error) { IsSuccess = success; Error = error; }
+    private Resultado(bool esExitoso, string? error) { EsExitoso = esExitoso; Error = error; }
+
+    public static Result Success()             => new(true, null);
+    public static Result Failure(string error) => new(false, error);
+    public static Resultado Exito()                => new(true, null);
+    public static Resultado Fallo(string error)    => new(false, error);
+}
+```
+
+### Comando (Escritura)
+
+```csharp
+// CarFix.Application/Features/OrdeneReparacion/Commands/CrearOrden/CrearOrdenCommand.cs
+// CarFix.Application/Features/OrdenesReparacion/Commands/CrearOrden/CrearOrdenCommand.cs
+public record CrearOrdenCommand(
+    int    VehiculoID,
+    string ProblemaGeneral
+) : IRequest<Result<int>>;
+) : IRequest<Resultado<int>>;
+```
+
+### Handler del Comando
+
+```csharp
+// CarFix.Application/Features/OrdenesReparacion/Commands/CrearOrden/CrearOrdenHandler.cs
+public class CrearOrdenHandler : IRequestHandler<CrearOrdenCommand, Result<int>>
+public class CrearOrdenHandler : IRequestHandler<CrearOrdenCommand, Resultado<int>>
+{
+    private readonly IOrdenReparacionRepository _repo;
+    private readonly IUnitOfWork               _uow;
+    private readonly IRepositorioOrdenReparacion _repositorio;
+    private readonly IUnidadTrabajo             _unidadTrabajo;
+
+    public CrearOrdenHandler(IOrdenReparacionRepository repo, IUnitOfWork uow)
+    public CrearOrdenHandler(IRepositorioOrdenReparacion repositorio, IUnidadTrabajo unidadTrabajo)
+    {
+        _repo = repo;
+        _uow  = uow;
+        _repositorio    = repositorio;
+        _unidadTrabajo  = unidadTrabajo;
+    }
+
+    public async Task<Result<int>> Handle(CrearOrdenCommand cmd, CancellationToken ct)
+    public async Task<Resultado<int>> Handle(CrearOrdenCommand cmd, CancellationToken ct)
+    {
+        const int estadoRecibidoId = 1;
+
+        var orden = OrdenReparacion.Crear(cmd.VehiculoID, cmd.ProblemaGeneral, estadoRecibidoId);
+
+        await _repo.AddAsync(orden, ct);
+        await _uow.SaveChangesAsync(ct);
+        await _repositorio.AgregarAsync(orden, ct);
+        await _unidadTrabajo.GuardarCambiosAsync(ct);
+
+        return Result<int>.Success(orden.OrdenReparacionID);
+        return Resultado<int>.Exito(orden.OrdenReparacionID);
+    }
+}
+```
+
+    public CrearOrdenValidator()
+    {
+        RuleFor(x => x.VehiculoID)
+            .GreaterThan(0).WithMessage("El vehículo es requerido.");
+            .GreaterThan(0).WithMessage("El vehiculo es requerido.");
+
+        RuleFor(x => x.ProblemaGeneral)
+            .NotEmpty().WithMessage("Debe describir el problema.")
+
+
+### Query (Lectura)
+
+Las queries pueden saltarse el repositorio y consultar directo al DbContext para mayor eficiencia. No modifican estado.
+Las queries pueden consultar directo al DbContext para mayor eficiencia. No modifican estado.
+
+```csharp
+// CarFix.Application/Features/OrdenesReparacion/Queries/GetOrdenById/GetOrdenByIdQuery.cs
+public record GetOrdenByIdQuery(int Id) : IRequest<Result<OrdenReparacionDto>>;
+// CarFix.Application/Features/OrdenesReparacion/Queries/ObtenerOrdenPorId/ObtenerOrdenPorIdQuery.cs
+public record ObtenerOrdenPorIdQuery(int Id) : IRequest<Resultado<OrdenReparacionDto>>;
+
+// CarFix.Application/Features/OrdenesReparacion/Queries/GetOrdenById/GetOrdenByIdHandler.cs
+public class GetOrdenByIdHandler : IRequestHandler<GetOrdenByIdQuery, Result<OrdenReparacionDto>>
+// CarFix.Application/Features/OrdenesReparacion/Queries/ObtenerOrdenPorId/ObtenerOrdenPorIdHandler.cs
+public class ObtenerOrdenPorIdHandler : IRequestHandler<ObtenerOrdenPorIdQuery, Resultado<OrdenReparacionDto>>
+{
+    private readonly ICarFixDbContext _context;
+    private readonly ICarFixDbContext _contexto;
+
+    public GetOrdenByIdHandler(ICarFixDbContext context) => _context = context;
+    public ObtenerOrdenPorIdHandler(ICarFixDbContext contexto) => _contexto = contexto;
+
+    public async Task<Result<OrdenReparacionDto>> Handle(GetOrdenByIdQuery query, CancellationToken ct)
+    public async Task<Resultado<OrdenReparacionDto>> Handle(ObtenerOrdenPorIdQuery query, CancellationToken ct)
+    {
+        var dto = await _context.OrdenesReparacion
+        var dto = await _contexto.OrdenesReparacion
+            .Where(o => o.OrdenReparacionID == query.Id)
+            .Select(o => new OrdenReparacionDto(
+                o.OrdenReparacionID,
+
+            .FirstOrDefaultAsync(ct);
+
+        if (dto is null)
+            return Result<OrdenReparacionDto>.Failure("Orden no encontrada.");
+            return Resultado<OrdenReparacionDto>.Fallo("Orden no encontrada.");
+
+        return Result<OrdenReparacionDto>.Success(dto);
+        return Resultado<OrdenReparacionDto>.Exito(dto);
+    }
+}
+```
+
+### DTO
+
+```csharp
+// CarFix.Application/Features/OrdenesReparacion/Queries/GetOrdenById/OrdenReparacionDto.cs
+// CarFix.Application/Features/OrdenesReparacion/Queries/ObtenerOrdenPorId/OrdenReparacionDto.cs
+public record OrdenReparacionDto(
+    int      OrdenReparacionID,
+    string   ProblemaGeneral,
+
+    public static IServiceCollection AddApplication(this IServiceCollection services)
+    {
+        services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(Assembly.GetExecutingAssembly()));
+
+        services.AddValidatorsFromAssembly(Assembly.GetExecutingAssembly());
+
+        // Pipeline de validación automática antes de cada handler
+        services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>));
+
+        services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ComportamientoValidacion<,>));
+        return services;
+    }
+}
+```
+
+### Pipeline de Validación Automática
+### Pipeline de Validacion Automatica
+
+```csharp
+// CarFix.Application/Common/Behaviors/ValidationBehavior.cs
+public class ValidationBehavior<TRequest, TResponse> : IPipelineBehavior<TRequest, TResponse>
+    where TRequest : notnull
+// CarFix.Application/Comun/Comportamientos/ComportamientoValidacion.cs
+public class ComportamientoValidacion<TSolicitud, TRespuesta> : IPipelineBehavior<TSolicitud, TRespuesta>
+    where TSolicitud : notnull
+{
+    private readonly IEnumerable<IValidator<TRequest>> _validators;
+    private readonly IEnumerable<IValidator<TSolicitud>> _validadores;
+
+    public ValidationBehavior(IEnumerable<IValidator<TRequest>> validators)
+        => _validators = validators;
+    public ComportamientoValidacion(IEnumerable<IValidator<TSolicitud>> validadores)
+        => _validadores = validadores;
+
+    public async Task<TResponse> Handle(TRequest request, RequestHandlerDelegate<TResponse> next, CancellationToken ct)
+    public async Task<TRespuesta> Handle(TSolicitud solicitud, RequestHandlerDelegate<TRespuesta> siguiente, CancellationToken ct)
+    {
+        if (!_validators.Any()) return await next();
+        if (!_validadores.Any()) return await siguiente();
+
+        var context = new ValidationContext<TRequest>(request);
+        var failures = _validators
+            .Select(v => v.Validate(context))
+        var contexto = new ValidationContext<TSolicitud>(solicitud);
+        var fallas = _validadores
+            .Select(v => v.Validate(contexto))
+            .SelectMany(r => r.Errors)
+            .Where(f => f is not null)
+            .ToList();
+
+        if (failures.Any())
+            throw new ValidationException(failures);
+        if (fallas.Any())
+            throw new ValidationException(fallas);
+
+        return await next();
+        return await siguiente();
+    }
+}
+```
+
+
+## 4. Capa de Infraestructura (`CarFix.Infrastructure`)
+
+Implementa las interfaces definidas en Application/Domain. Aquí viven EF Core, los repositorios, y los clientes de servicios externos (email, PDF, IA).
+Implementa las interfaces definidas en Application/Domain. Aqui viven EF Core, los repositorios y los clientes de servicios externos (email, PDF, IA).
+
+**Paquetes NuGet:**
+- `Microsoft.EntityFrameworkCore.SqlServer`
+
+### DbContext
+
+```csharp
+// CarFix.Infrastructure/Persistence/CarFixDbContext.cs
+// CarFix.Infrastructure/Persistencia/CarFixDbContext.cs
+public class CarFixDbContext : DbContext, ICarFixDbContext
+{
+    public CarFixDbContext(DbContextOptions<CarFixDbContext> options) : base(options) { }
+    public CarFixDbContext(DbContextOptions<CarFixDbContext> opciones) : base(opciones) { }
+
+    public DbSet<Cliente>          Clientes           => Set<Cliente>();
+    public DbSet<Vehiculo>         Vehiculos          => Set<Vehiculo>();
+    public DbSet<OrdenReparacion>  OrdenesReparacion  => Set<OrdenReparacion>();
+    public DbSet<Reparacion>       Reparaciones       => Set<Reparacion>();
+    public DbSet<Repuesto>         Repuestos          => Set<Repuesto>();
+    public DbSet<Factura>          Facturas           => Set<Factura>();
+    public DbSet<Cliente>          Clientes          => Set<Cliente>();
+    public DbSet<Vehiculo>         Vehiculos         => Set<Vehiculo>();
+    public DbSet<OrdenReparacion>  OrdenesReparacion => Set<OrdenReparacion>();
+    public DbSet<Reparacion>       Reparaciones      => Set<Reparacion>();
+    public DbSet<Repuesto>         Repuestos         => Set<Repuesto>();
+    public DbSet<Factura>          Facturas          => Set<Factura>();
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        // Aplicar todas las configuraciones del ensamblado automáticamente
+        modelBuilder.ApplyConfigurationsFromAssembly(Assembly.GetExecutingAssembly());
+        base.OnModelCreating(modelBuilder);
+    }
+
+    public async Task<int> SaveChangesAsync(CancellationToken ct = default)
+    public async Task<int> GuardarCambiosAsync(CancellationToken ct = default)
+        => await base.SaveChangesAsync(ct);
+}
+```
+
+### Configuración de Entidad (Fluent API)
+### Configuracion de Entidad (Fluent API)
+
+```csharp
+// CarFix.Infrastructure/Persistence/Configurations/OrdenReparacionConfiguration.cs
+// CarFix.Infrastructure/Persistencia/Configuraciones/OrdenReparacionConfiguration.cs
+public class OrdenReparacionConfiguration : IEntityTypeConfiguration<OrdenReparacion>
+{
+    public void Configure(EntityTypeBuilder<OrdenReparacion> builder)
+
+### Repositorio
+
+```csharp
+// CarFix.Infrastructure/Persistence/Repositories/OrdenReparacionRepository.cs
+public class OrdenReparacionRepository : IOrdenReparacionRepository
+// CarFix.Infrastructure/Persistencia/Repositorios/RepositorioOrdenReparacion.cs
+public class RepositorioOrdenReparacion : IRepositorioOrdenReparacion
+{
+    private readonly CarFixDbContext _context;
+    private readonly CarFixDbContext _contexto;
+
+    public OrdenReparacionRepository(CarFixDbContext context) => _context = context;
+    public RepositorioOrdenReparacion(CarFixDbContext contexto) => _contexto = contexto;
+
+    public async Task<OrdenReparacion?> GetByIdAsync(int id, CancellationToken ct = default)
+        => await _context.OrdenesReparacion
+                         .Include(o => o.Reparaciones)
+                         .FirstOrDefaultAsync(o => o.OrdenReparacionID == id, ct);
+    public async Task<OrdenReparacion?> ObtenerPorIdAsync(int id, CancellationToken ct = default)
+        => await _contexto.OrdenesReparacion
+                          .Include(o => o.Reparaciones)
+                          .FirstOrDefaultAsync(o => o.OrdenReparacionID == id, ct);
+
+    public async Task<IEnumerable<OrdenReparacion>> GetAllAsync(CancellationToken ct = default)
+        => await _context.OrdenesReparacion.ToListAsync(ct);
+    public async Task<IEnumerable<OrdenReparacion>> ObtenerTodosAsync(CancellationToken ct = default)
+        => await _contexto.OrdenesReparacion.ToListAsync(ct);
+
+    public async Task AddAsync(OrdenReparacion orden, CancellationToken ct = default)
+        => await _context.OrdenesReparacion.AddAsync(orden, ct);
+    public async Task AgregarAsync(OrdenReparacion orden, CancellationToken ct = default)
+        => await _contexto.OrdenesReparacion.AddAsync(orden, ct);
+
+    public void Update(OrdenReparacion orden)
+        => _context.OrdenesReparacion.Update(orden);
+    public void Actualizar(OrdenReparacion orden)
+        => _contexto.OrdenesReparacion.Update(orden);
+}
+```
+
+### Unit of Work
+### Unidad de Trabajo
+
+```csharp
+// CarFix.Application/Common/Interfaces/IUnitOfWork.cs (en Application)
+public interface IUnitOfWork
+// CarFix.Application/Comun/Interfaces/IUnidadTrabajo.cs (en Application)
+public interface IUnidadTrabajo
+{
+    Task<int> SaveChangesAsync(CancellationToken ct = default);
+    Task<int> GuardarCambiosAsync(CancellationToken ct = default);
+}
+
+// CarFix.Infrastructure/Persistence/UnitOfWork.cs (en Infrastructure)
+public class UnitOfWork : IUnitOfWork
+// CarFix.Infrastructure/Persistencia/UnidadTrabajo.cs (en Infrastructure)
+public class UnidadTrabajo : IUnidadTrabajo
+{
+    private readonly CarFixDbContext _context;
+    public UnitOfWork(CarFixDbContext context) => _context = context;
+    private readonly CarFixDbContext _contexto;
+    public UnidadTrabajo(CarFixDbContext contexto) => _contexto = contexto;
+
+    public Task<int> SaveChangesAsync(CancellationToken ct = default)
+        => _context.SaveChangesAsync(ct);
+    public Task<int> GuardarCambiosAsync(CancellationToken ct = default)
+        => _contexto.SaveChangesAsync(ct);
+}
+```
+
+
+{
+    public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration config)
+    {
+        services.AddDbContext<CarFixDbContext>(options =>
+            options.UseSqlServer(config.GetConnectionString("CarFix")));
+        services.AddDbContext<CarFixDbContext>(opciones =>
+            opciones.UseSqlServer(config.GetConnectionString("CarFix")));
+
+        services.AddScoped<ICarFixDbContext>(sp => sp.GetRequiredService<CarFixDbContext>());
+        services.AddScoped<IUnitOfWork, UnitOfWork>();
+        services.AddScoped<IOrdenReparacionRepository, OrdenReparacionRepository>();
+        services.AddScoped<IUnidadTrabajo, UnidadTrabajo>();
+        services.AddScoped<IRepositorioOrdenReparacion, RepositorioOrdenReparacion>();
+
+        return services;
+    }
+
+
+## 5. Capa de API (`CarFix.API`)
+
+Punto de entrada HTTP. Los controladores son delegadores: reciben la request, llaman a MediatR y devuelven la respuesta. **Cero lógica de negocio aquí.**
+Punto de entrada HTTP. Los endpoints son delegadores: reciben la solicitud, llaman a MediatR y devuelven la respuesta. **Cero logica de negocio aqui.**
+
+### Minimal API con `TypedResults` (.NET 10)
+
+En .NET 10 se usa `TypedResults` (en lugar de `Results`) para que los endpoints puedan inferir el tipo de respuesta en el esquema OpenAPI generado automáticamente.
+En .NET 10 se usa `TypedResults` para que los endpoints puedan inferir el tipo de respuesta en el esquema OpenAPI generado automaticamente.
+
+```csharp
+// CarFix.API/Endpoints/OrdenesEndpoints.cs
+public static class OrdenesEndpoints
+// CarFix.API/Endpoints/EndpointsOrdenes.cs
+public static class EndpointsOrdenes
+{
+    public static void MapOrdenes(this IEndpointRouteBuilder app)
+    public static void MapearOrdenes(this IEndpointRouteBuilder app)
+    {
+        var group = app.MapGroup("/api/ordenes")
+        var grupo = app.MapGroup("/api/ordenes")
+                       .WithTags("Ordenes")
+                       .WithOpenApi();
+
+        group.MapGet("{id:int}", async Task<Results<Ok<OrdenReparacionDto>, NotFound<string>>>
+        grupo.MapGet("{id:int}", async Task<Results<Ok<OrdenReparacionDto>, NotFound<string>>>
+            (int id, ISender sender) =>
+        {
+            var result = await sender.Send(new GetOrdenByIdQuery(id));
+            return result.IsSuccess
+                ? TypedResults.Ok(result.Value)
+                : TypedResults.NotFound(result.Error);
+            var resultado = await sender.Send(new ObtenerOrdenPorIdQuery(id));
+            return resultado.EsExitoso
+                ? TypedResults.Ok(resultado.Valor)
+                : TypedResults.NotFound(resultado.Error);
+        })
+        .WithName("GetOrdenById")
+        .WithSummary("Obtiene una orden de reparación por ID");
+        .WithName("ObtenerOrdenPorId")
+        .WithSummary("Obtiene una orden de reparacion por ID");
+
+        group.MapPost("/", async Task<Results<Created<int>, BadRequest<string>>>
+        grupo.MapPost("/", async Task<Results<Created<int>, BadRequest<string>>>
+            (CrearOrdenCommand cmd, ISender sender) =>
+        {
+            var result = await sender.Send(cmd);
+            return result.IsSuccess
+                ? TypedResults.Created($"/api/ordenes/{result.Value}", result.Value)
+                : TypedResults.BadRequest(result.Error);
+            var resultado = await sender.Send(cmd);
+            return resultado.EsExitoso
+                ? TypedResults.Created($"/api/ordenes/{resultado.Valor}", resultado.Valor)
+                : TypedResults.BadRequest(resultado.Error);
+        })
+        .WithName("CrearOrden")
+        .WithSummary("Crea una nueva orden de reparación");
+        .WithSummary("Crea una nueva orden de reparacion");
+    }
+}
+```
+
+### Manejo de Errores Global con `IExceptionHandler` (.NET 10)
+### Manejador de Excepciones Global (`IExceptionHandler` — .NET 10)
+
+.NET 10 incluye `IExceptionHandler` y `ProblemDetails` de forma nativa. No se necesita middleware manual.
+
+```csharp
+// CarFix.API/Exceptions/GlobalExceptionHandler.cs
+public class GlobalExceptionHandler : IExceptionHandler
+// CarFix.API/Excepciones/ManejadorExcepciones.cs
+public class ManejadorExcepciones : IExceptionHandler
+{
+    private readonly ILogger<GlobalExceptionHandler> _logger;
+    private readonly ILogger<ManejadorExcepciones> _logger;
+
+    public GlobalExceptionHandler(ILogger<GlobalExceptionHandler> logger)
+    public ManejadorExcepciones(ILogger<ManejadorExcepciones> logger)
+        => _logger = logger;
+
+    public async ValueTask<bool> TryHandleAsync(
+        HttpContext ctx,
+        Exception   exception,
+        HttpContext       contextoHttp,
+        Exception         excepcion,
+        CancellationToken ct)
+    {
+        var (statusCode, title, detail) = exception switch
+        var (codigoEstado, titulo, detalle) = excepcion switch
+        {
+            ValidationException ex => (
+                StatusCodes.Status400BadRequest,
+                "Validation error",
+                "Error de validacion",
+                string.Join("; ", ex.Errors.Select(e => e.ErrorMessage))),
+
+            DomainException ex => (
+            ExcepcionDominio ex => (
+                StatusCodes.Status422UnprocessableEntity,
+                "Domain rule violation",
+                "Regla de negocio violada",
+                ex.Message),
+
+            _ => (
+                StatusCodes.Status500InternalServerError,
+                "Internal server error",
+                "An unexpected error occurred.")
+                "Error interno del servidor",
+                "Ocurrio un error inesperado.")
+        };
+
+        if (statusCode == 500)
+            _logger.LogError(exception, "Unhandled exception");
+        if (codigoEstado == 500)
+            _logger.LogError(excepcion, "Excepcion no controlada");
+
+        ctx.Response.StatusCode = statusCode;
+        await ctx.Response.WriteAsJsonAsync(new ProblemDetails
+        contextoHttp.Response.StatusCode = codigoEstado;
+        await contextoHttp.Response.WriteAsJsonAsync(new ProblemDetails
+        {
+            Status = statusCode,
+            Title  = title,
+            Detail = detail
+            Status = codigoEstado,
+            Title  = titulo,
+            Detail = detalle
+        }, ct);
+
+        return true;
+
+
+### Program.cs (.NET 10)
+
+.NET 10 incluye OpenAPI nativo (`MapOpenApi`). No se usa Swashbuckle.
+
+```csharp
+// CarFix.API/Program.cs
+var builder = WebApplication.CreateBuilder(args);
+
+    .AddApplication()
+    .AddInfrastructure(builder.Configuration);
+
+// ProblemDetails e IExceptionHandler nativos de .NET 10
+builder.Services.AddProblemDetails();
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+
+// OpenAPI nativo (sin Swashbuckle)
+builder.Services.AddExceptionHandler<ManejadorExcepciones>();
+builder.Services.AddOpenApi();
+
+var app = builder.Build();
+
+
+app.UseHttpsRedirection();
+
+app.MapOrdenes();
+// app.MapClientes();
+// app.MapFacturas();
+app.MapearOrdenes();
+// app.MapearClientes();
+// app.MapearFacturas();
+
+app.Run();
+```
+
+### Cadena de conexión (`appsettings.json`)
+### Cadena de conexion (`appsettings.json`)
+
+```json
+{
+
+
+### Estructura de carpetas dentro de Application
+
+Organizar por **feature**, no por tipo técnico:
+Organizar por **feature**, no por tipo tecnico:
+
+```text
+CarFix.Application/
+├── Common/
+│   ├── Behaviors/
+│   │   └── ValidationBehavior.cs
+├── Comun/
+│   ├── Comportamientos/
+│   │   └── ComportamientoValidacion.cs
+│   ├── Interfaces/
+│   │   ├── ICarFixDbContext.cs
+│   │   └── IUnitOfWork.cs
+│   └── Result.cs
+│   │   └── IUnidadTrabajo.cs
+│   └── Resultado.cs
+└── Features/
+    ├── OrdenesReparacion/
+    │   ├── Commands/
+
+    │   │       ├── CrearOrdenHandler.cs
+    │   │       └── CrearOrdenValidator.cs
+    │   └── Queries/
+    │       └── GetOrdenById/
+    │           ├── GetOrdenByIdQuery.cs
+    │           ├── GetOrdenByIdHandler.cs
+    │       └── ObtenerOrdenPorId/
+    │           ├── ObtenerOrdenPorIdQuery.cs
+    │           ├── ObtenerOrdenPorIdHandler.cs
+    │           └── OrdenReparacionDto.cs
+    ├── Clientes/
+    ├── Facturas/
+
+
+### Evitar (Anti-patrones)
+
+| Anti-patrón | Corrección |
+| Anti-patron | Correccion |
+|---|---|
+| Lógica de negocio en controllers | Mover al Handler o a la entidad de dominio |
+| Entidades anémicas con solo getters/setters públicos | Encapsular comportamiento con métodos de dominio |
+| Repositorio genérico `IRepository<T>` con métodos CRUD globales | Repositorios específicos con métodos con nombre de dominio |
+| `DbContext` inyectado directamente en controllers o handlers de commands | Usar `IUnitOfWork` en commands; `ICarFixDbContext` (interfaz) en queries |
+| `try/catch` para controlar flujo de negocio | Usar `Result<T>` para errores esperados; exceptions solo para errores realmente excepcionales |
+| DTOs que exponen el modelo de dominio directamente | Mapear siempre a DTOs específicos por caso de uso |
+| Toda la lógica en un único proyecto | Respetar la separación en 4 proyectos/capas |
+| Logica de negocio en endpoints | Mover al Handler o a la entidad de dominio |
+| Entidades anemicas con solo getters/setters publicos | Encapsular comportamiento con metodos de dominio |
+| Repositorio generico `IRepositorio<T>` con CRUD global | Repositorios especificos con metodos con nombre de dominio |
+| `DbContext` inyectado directo en handlers de commands | Usar `IUnidadTrabajo` en commands; `ICarFixDbContext` en queries |
+| `try/catch` para controlar flujo de negocio | Usar `Resultado<T>` para errores esperados; excepciones solo para lo verdaderamente excepcional |
+| DTOs que exponen el modelo de dominio directamente | Mapear siempre a DTOs especificos por caso de uso |
+| Toda la logica en un unico proyecto | Respetar la separacion en 4 proyectos/capas |
+
+---
+
+
+
+| Capa | Proyecto | Responsabilidad | Conoce a |
+|---|---|---|---|
+| **Domain** | `CarFix.Domain` | Entidades, Value Objects, interfaces de repositorio, excepciones de dominio | Nadie |
+| **Domain** | `CarFix.Domain` | Entidades, interfaces de repositorio, excepciones de dominio | Nadie |
+| **Application** | `CarFix.Application` | Casos de uso (Commands/Queries), DTOs, validaciones, interfaces de servicios externos | Domain |
+| **Infrastructure** | `CarFix.Infrastructure` | EF Core, repositorios, servicios de email/PDF/IA, migraciones | Application + Domain |
+| **API** | `CarFix.API` | Endpoints HTTP, middleware, configuración del host | Application + Infrastructure |
+| **API** | `CarFix.API` | Endpoints HTTP, manejador de excepciones, configuracion del host | Application + Infrastructure |
+
+Ahora guardo la convención en memoria y la agrego a CLAUDE.md:
+
+  Wrote 2 memories
+
+● Update(CLAUDE.md)
+Added 7 lines
+
+# CAR_FIX — Sistema de Reparación de Vehículos
+
+## 0. Convencion de Nomenclatura (aplica a TODO el codigo)
+
+**Todo el codigo se escribe en español, sin caracteres especiales.**
+- Sin tildes: `numero` no `número`, `pagina` no `página`
+- Sin ñ: reemplazar siguiendo el patron del esquema de BD — `annio` en lugar de `año`
+- Sufijos tecnicos reconocidos pueden quedar en ingles: `Repository`, `Handler`, `Validator`, `Command`, `Query`, `Dto`, `Configuration`, `Exception`
+
+## 1. Estado del Proyecto
+
+Este repositorio está en fase de **diseño/planificación**. No existe código de aplicación aún — solo documentación de base de datos y especificaciones de negocio. Los pendientes de BD y de desarrollo están en [`PENDIENTE
+S.md`](PENDIENTES.md).
+
+Listo. El resumen de lo que cambió en la guía:
+
+┌────────────────────────────────────┬──────────────────────────────────────┐
+│        Antes (inglés/mixto)        │ Ahora (español sin chars especiales) │
+├────────────────────────────────────┼──────────────────────────────────────┤
+│ GetByIdAsync                       │ ObtenerPorIdAsync                    │
+├────────────────────────────────────┼──────────────────────────────────────┤
+│ GetAllAsync                        │ ObtenerTodosAsync                    │
+├────────────────────────────────────┼──────────────────────────────────────┤
+│ AddAsync / Update                  │ AgregarAsync / Actualizar            │
+├────────────────────────────────────┼──────────────────────────────────────┤
+│ IUnitOfWork / UnitOfWork           │ IUnidadTrabajo / UnidadTrabajo       │
+├────────────────────────────────────┼──────────────────────────────────────┤
+│ SaveChangesAsync (interfaz propia) │ GuardarCambiosAsync                  │
+├────────────────────────────────────┼──────────────────────────────────────┤
+│ Result<T> con IsSuccess, Value     │ Resultado<T> con EsExitoso, Valor    │
+├────────────────────────────────────┼──────────────────────────────────────┤
+│ Success() / Failure()              │ Exito() / Fallo()                    │
+├────────────────────────────────────┼──────────────────────────────────────┤
+│ GetOrdenByIdQuery/Handler          │ ObtenerOrdenPorIdQuery/Handler       │
+├────────────────────────────────────┼──────────────────────────────────────┤
+│ GlobalExceptionHandler             │ ManejadorExcepciones                 │
+├────────────────────────────────────┼──────────────────────────────────────┤
+│ DomainException                    │ ExcepcionDominio                     │
+├────────────────────────────────────┼──────────────────────────────────────┤
+│ ValidationBehavior                 │ ComportamientoValidacion             │
+├────────────────────────────────────┼──────────────────────────────────────┤
+│ Carpetas Behaviors/, GetOrdenById/ │ Comportamientos/, ObtenerOrdenPorId/ │
+└────────────────────────────────────┴──────────────────────────────────────┘
+
+La convención también quedó guardada en memoria y documentada en CLAUDE.md para que aplique automáticamente.
+
+✻ Cogitated for 3m 28s
+
+> El backend debe tener el patron unidad de trabajo, inversión de control, inyeccion de dependencias, si es así perfecto
+
+Sí, los tres están cubiertos en la guía. Te confirmo dónde vive cada uno:
+
+Unidad de Trabajo — IUnidadTrabajo / UnidadTrabajo en la capa de Infrastructure. Los handlers de commands llaman await _unidadTrabajo.GuardarCambiosAsync(ct) al final de cada operación de escritura, en lugar de hacer SaveChanges directamente en el repositorio.
+
+Inversión de Control — Las capas interiores (Domain, Application) definen interfaces (IRepositorioOrdenReparacion, IUnidadTrabajo, ICarFixDbContext). Infrastructure provee las implementaciones concretas. Nadie depende de la implementación, solo del contrato.
+
+Inyección de Dependencias — Cada capa tiene su propio DependencyInjection.cs que registra sus servicios. El Program.cs solo llama AddApplication() y AddInfrastructure(). Los handlers, repositorios y endpoints reciben sus dependencias por constructor automáticamente vía el contenedor de .NET.
+
+Los tres patrones trabajan juntos: IoC define los contratos, DI resuelve las implementaciones en tiempo de ejecución, y Unit of Work coordina que todos los cambios de una operación se persistan como una unidad atómica.
+
+La guía está correcta, no hay nada que agregar.
+
+✻ Baked for 14s
+
+> Vamos a usar entity framework pero con DataBase First, los nombres en la programación deben quedar correctamente como se definen en las tablas en español, además el web api debe estar asegurudo con JSON web token
+
+Eso cambia varias cosas en la guía: el enfoque Database First implica que las entidades se generan desde la BD (no se crean a mano), los nombres quedan exactamente como las tablas, y hay que manejar cómo extender esas entidades sin perder los cambios al regenerar. Además hay que integrar JWT. Voy a reescribir la guía completa con todo esto incorporado.
+
+● Write(.claude\arquitectura_limpia_backend.md)
+Added 306 lines, removed 204 lines
+# Guía de Arquitectura Limpia — Backend ASP.NET Core (.NET 10 / C#)
+# Guia de Arquitectura Limpia — Backend ASP.NET Core (.NET 10 / C#)
+
+Esta guía define los patrones y convenciones arquitectónicas para el backend del proyecto CAR_FIX usando **ASP.NET Core Web API con .NET 10**. El objetivo es mantener el código desacoplado, testeable y fácil de extender
+ sin tocar capas que no corresponden.
+Backend del proyecto CAR_FIX usando **ASP.NET Core Web API, .NET 10, Entity Framework Core Database First, JWT**.
+
+---
+
+## 0. Convenciones de Nomenclatura
+
+**Todo el código se escribe en español, sin caracteres especiales.**
+**Todo el codigo se escribe en espannol, sin caracteres especiales.**
+
+- Sin tildes: `fecha` no `fécha`, `numero` no `número`
+- Sin ñ: sustituir por `nn` seguido de la vocal — ejemplo: `annio` en lugar de `año`, `espannol` en lugar de `español`
+- Los sufijos de patrones técnicos reconocidos pueden quedar en inglés: `Repository`, `Handler`, `Validator`, `Command`, `Query`, `Dto`, `Configuration`, `Exception`
+- Sin tildes: `numero` no `número`, `pagina` no `página`
+- Sin nn: `annio` en lugar de `año`, `espannol` en lugar de `español`
+- Los nombres de entidades y propiedades deben coincidir **exactamente** con los nombres de las tablas y columnas en la base de datos
+- Sufijos tecnicos pueden quedar en ingles: `Repository`, `Handler`, `Validator`, `Command`, `Query`, `Dto`, `Configuration`, `Exception`
+
+| Elemento | Convención | Ejemplo |
+| Elemento | Convencion | Ejemplo |
+|---|---|---|
+| Clases de dominio | PascalCase español | `OrdenReparacion`, `ExcepcionDominio` |
+| Interfaces | `I` + PascalCase español | `IRepositorioOrden`, `IUnidadTrabajo` |
+| Métodos | PascalCase español | `ObtenerPorIdAsync`, `AgregarAsync` |
+| Propiedades | PascalCase español | `EsExitoso`, `FechaIngreso` |
+| Variables locales | camelCase español | `ordenActual`, `totalRepuestos` |
+| Parámetros | camelCase español | `vehiculoId`, `problemaGeneral` |
+| Carpetas de features | PascalCase español | `CrearOrden/`, `ObtenerOrdenPorId/` |
+| Clases de entidad | Igual que la tabla DB (singular) | `OrdenReparacion`, `Cliente` |
+| Propiedades | Igual que la columna DB | `OrdenReparacionID`, `FechaIngreso` |
+| Interfaces | `I` + PascalCase espannol | `IRepositorioOrden`, `IUnidadTrabajo` |
+| Metodos | PascalCase espannol | `ObtenerPorIdAsync`, `AgregarAsync` |
+| Variables locales | camelCase espannol | `ordenActual`, `totalRepuestos` |
+| Carpetas de features | PascalCase espannol | `CrearOrden/`, `ObtenerOrdenPorId/` |
+
+---
+
+## 1. Estructura de la Solución
+## 1. Estructura de la Solucion
+
+La solución se divide en **4 proyectos** que representan las capas de Clean Architecture. Las dependencias solo fluyen hacia adentro: API → Application → Domain. Infrastructure implementa las interfaces definidas en las
+ capas interiores.
+
+```text
+CarFix.sln
+├── CarFix.Domain/           # Nucleo del negocio — sin dependencias externas
+├── CarFix.Application/      # Casos de uso — depende solo de Domain
+├── CarFix.Infrastructure/   # Acceso a datos y servicios externos — implementa interfaces de Application
+└── CarFix.API/              # Punto de entrada HTTP — depende de Application e Infrastructure
+├── CarFix.Domain/           # Interfaces, excepciones y contratos — sin dependencias externas
+├── CarFix.Application/      # Casos de uso (CQRS) — depende solo de Domain
+├── CarFix.Infrastructure/   # EF Core Database First, repositorios, JWT, servicios externos
+└── CarFix.API/              # Endpoints HTTP, autenticacion, configuracion del host
+```
+
+**Regla de oro:** Domain no conoce a nadie. Application no conoce a Infrastructure ni a API. Infrastructure no conoce a API.
+
+---
+
+## 2. Capa de Dominio (`CarFix.Domain`)
+## 2. Entity Framework Core — Database First
+
+Contiene las entidades de negocio, value objects y las interfaces de repositorio. **Cero dependencias NuGet** salvo las del runtime base.
+### Enfoque
+
+### Entidades Ricas (No Anemicas)
+Las entidades **se generan automaticamente desde la base de datos** con el comando `scaffold`. **Nunca se crean a mano.** Al cambiar el esquema de BD, se regeneran.
+
+Las entidades encapsulan su propio comportamiento. Los setters son privados; el estado cambia solo a través de métodos con nombres de dominio.
+Los archivos generados van a `Infrastructure/Persistencia/Generado/` y **nunca se editan directamente**. El comportamiento de dominio se agrega mediante **clases parciales** en `Infrastructure/Persistencia/Extensiones/`
+.
+
+```csharp
+// CarFix.Domain/Entidades/OrdenReparacion.cs
+public class OrdenReparacion
+{
+    public int      OrdenReparacionID { get; private set; }
+    public int      VehiculoID        { get; private set; }
+    public int      EstadoOrdenID     { get; private set; }
+    public DateTime FechaIngreso      { get; private set; }
+    public string   ProblemaGeneral   { get; private set; } = string.Empty;
+### Comando de Scaffolding
+
+    private readonly List<Reparacion> _reparaciones = new();
+    public IReadOnlyList<Reparacion> Reparaciones => _reparaciones.AsReadOnly();
+```bash
+dotnet ef dbcontext scaffold \
+  "Server=localhost\SQL2022;Database=CAR_FIX;Integrated Security=True;TrustServerCertificate=True" \
+  Microsoft.EntityFrameworkCore.SqlServer \
+  --output-dir Persistencia/Generado \
+  --context-dir Persistencia \
+  --context CarFixDbContext \
+  --namespace CarFix.Infrastructure.Persistencia.Generado \
+  --context-namespace CarFix.Infrastructure.Persistencia \
+  --force \
+  --no-onconfiguring
+  --project CarFix.Infrastructure
+```
+
+    private OrdenReparacion() { } // Para EF Core
+Opciones clave:
+- `--force`: sobreescribe archivos existentes en cada regeneracion
+- `--no-onconfiguring`: evita que la cadena de conexion quede hardcodeada en el contexto generado
+- `--output-dir Persistencia/Generado`: las entidades generadas van aqui, separadas del codigo propio
+
+### Estructura generada
+
+```text
+CarFix.Infrastructure/
+└── Persistencia/
+    ├── CarFixDbContext.cs          # Generado — no editar
+    └── Generado/
+        ├── Cliente.cs              # Generado — no editar
+        ├── Vehiculo.cs             # Generado — no editar
+        ├── OrdenReparacion.cs      # Generado — no editar
+        ├── Reparacion.cs           # Generado — no editar
+        ├── Repuesto.cs             # Generado — no editar
+        ├── Factura.cs              # Generado — no editar
+        ├── Taller.cs               # Generado — no editar
+        ├── TipoReparacion.cs       # Generado — no editar
+        ├── EstadoOrden.cs          # Generado — no editar
+        └── EstadoFactura.cs        # Generado — no editar
+```
+
+### Extender entidades con clases parciales
+
+Para agregar comportamiento de dominio sin tocar los archivos generados, se usan clases parciales:
+
+```csharp
+// CarFix.Infrastructure/Persistencia/Extensiones/OrdenReparacionExtension.cs
+namespace CarFix.Infrastructure.Persistencia.Generado;
+
+public partial class OrdenReparacion
+{
+    public static OrdenReparacion Crear(int vehiculoId, string problemaGeneral, int estadoInicialId)
+    {
+        if (string.IsNullOrWhiteSpace(problemaGeneral))
+
+            VehiculoID      = vehiculoId,
+            ProblemaGeneral = problemaGeneral,
+            EstadoOrdenID   = estadoInicialId,
+            FechaIngreso    = DateTime.UtcNow
+            FechaIngreso    = DateTime.UtcNow,
+            FechaSalida     = DateTime.UtcNow.AddDays(3),
+            EsGarantia      = false
+        };
+    }
+
+    public void AgregarReparacion(Reparacion reparacion)
+        => _reparaciones.Add(reparacion);
+
+    public void CambiarEstado(int nuevoEstadoId)
+        => EstadoOrdenID = nuevoEstadoId;
+}
+```
+
+### Interfaces de Repositorio
+### Extender el DbContext con clase parcial
+
+Los contratos de persistencia se definen en Domain. Infrastructure los implementa. Métodos con nombres del dominio, en español.
+El DbContext generado se extiende para implementar la interfaz `ICarFixDbContext` sin tocar el archivo generado:
+
+```csharp
+// CarFix.Infrastructure/Persistencia/CarFixDbContextExtension.cs
+namespace CarFix.Infrastructure.Persistencia;
+
+public partial class CarFixDbContext : ICarFixDbContext
+{
+    public async Task<int> GuardarCambiosAsync(CancellationToken ct = default)
+        => await base.SaveChangesAsync(ct);
+}
+```
+
+---
+
+## 3. Capa de Dominio (`CarFix.Domain`)
+
+Con Database First, esta capa contiene **solo contratos y excepciones**. Las entidades viven en Infrastructure (generadas por EF).
+
+```text
+CarFix.Domain/
+├── Interfaces/
+│   ├── ICarFixDbContext.cs
+│   ├── IRepositorioOrdenReparacion.cs
+│   ├── IRepositorioCliente.cs
+│   └── IUnidadTrabajo.cs
+└── Excepciones/
+    └── ExcepcionDominio.cs
+```
+
+### Interfaz del DbContext (para queries directas)
+
+```csharp
+// CarFix.Domain/Interfaces/ICarFixDbContext.cs
+public interface ICarFixDbContext
+{
+    DbSet<Cliente>          Clientes          { get; }
+    DbSet<Vehiculo>         Vehiculos         { get; }
+    DbSet<OrdenReparacion>  OrdenesReparacion { get; }
+    DbSet<Reparacion>       Reparaciones      { get; }
+    DbSet<Repuesto>         Repuestos         { get; }
+    DbSet<Factura>          Facturas          { get; }
+
+    Task<int> GuardarCambiosAsync(CancellationToken ct = default);
+}
+```
+
+### Interfaces de Repositorio
+
+```csharp
+// CarFix.Domain/Interfaces/IRepositorioOrdenReparacion.cs
+public interface IRepositorioOrdenReparacion
+{
+    Task<OrdenReparacion?>            ObtenerPorIdAsync(int id, CancellationToken ct = default);
+    Task<OrdenReparacion?>             ObtenerPorIdAsync(int id, CancellationToken ct = default);
+    Task<IEnumerable<OrdenReparacion>> ObtenerTodosAsync(CancellationToken ct = default);
+    Task                              AgregarAsync(OrdenReparacion orden, CancellationToken ct = default);
+    void                              Actualizar(OrdenReparacion orden);
+    Task                               AgregarAsync(OrdenReparacion orden, CancellationToken ct = default);
+    void                               Actualizar(OrdenReparacion orden);
+}
+```
+
+
+
+---
+
+## 3. Capa de Aplicacion (`CarFix.Application`)
+## 4. Capa de Aplicacion (`CarFix.Application`)
+
+Orquesta los casos de uso. Usa **CQRS con MediatR** para separar lecturas de escrituras. Depende solo de `CarFix.Domain`.
+Orquesta los casos de uso con **CQRS y MediatR**. Depende solo de `CarFix.Domain`.
+
+**Paquetes NuGet:**
+- `MediatR`
+
+
+### Patron Resultado
+
+Nunca lanzar excepciones para controlar flujo de negocio. Usar `Resultado<T>` para comunicar exito o error de forma explicita.
+
+```csharp
+// CarFix.Application/Comun/Resultado.cs
+public class Resultado<T>
+
+    public T?      Valor     { get; }
+    public string? Error     { get; }
+
+    private Resultado(T valor)         { EsExitoso = true;  Valor = valor; }
+    private Resultado(string error)    { EsExitoso = false; Error = error; }
+    private Resultado(T valor)      { EsExitoso = true;  Valor = valor; }
+    private Resultado(string error) { EsExitoso = false; Error = error; }
+
+    public static Resultado<T> Exito(T valor)      => new(valor);
+    public static Resultado<T> Fallo(string error) => new(error);
+
+}
+```
+
+### Comando (Escritura)
+### Comando
+
+```csharp
+// CarFix.Application/Features/OrdenesReparacion/Commands/CrearOrden/CrearOrdenCommand.cs
+
+
+    public CrearOrdenHandler(IRepositorioOrdenReparacion repositorio, IUnidadTrabajo unidadTrabajo)
+    {
+        _repositorio    = repositorio;
+        _unidadTrabajo  = unidadTrabajo;
+        _repositorio   = repositorio;
+        _unidadTrabajo = unidadTrabajo;
+    }
+
+    public async Task<Resultado<int>> Handle(CrearOrdenCommand cmd, CancellationToken ct)
+
+}
+```
+
+### Validador del Comando (FluentValidation)
+### Validador
+
+```csharp
+// CarFix.Application/Features/OrdenesReparacion/Commands/CrearOrden/CrearOrdenValidator.cs
+
+}
+```
+
+### Query (Lectura)
+### Query (Lectura directa al DbContext)
+
+Las queries pueden consultar directo al DbContext para mayor eficiencia. No modifican estado.
+
+```csharp
+// CarFix.Application/Features/OrdenesReparacion/Queries/ObtenerOrdenPorId/ObtenerOrdenPorIdQuery.cs
+public record ObtenerOrdenPorIdQuery(int Id) : IRequest<Resultado<OrdenReparacionDto>>;
+
+}
+```
+
+### DTO
+
+```csharp
+// CarFix.Application/Features/OrdenesReparacion/Queries/ObtenerOrdenPorId/OrdenReparacionDto.cs
+public record OrdenReparacionDto(
+    int      OrdenReparacionID,
+    string   ProblemaGeneral,
+    DateTime FechaIngreso,
+    int      EstadoOrdenID
+);
+```
+
+### Registro de Servicios de Application
+
+```csharp
+
+}
+```
+
+### Pipeline de Validacion Automatica
+
+```csharp
+// CarFix.Application/Comun/Comportamientos/ComportamientoValidacion.cs
+public class ComportamientoValidacion<TSolicitud, TRespuesta> : IPipelineBehavior<TSolicitud, TRespuesta>
+    where TSolicitud : notnull
+{
+    private readonly IEnumerable<IValidator<TSolicitud>> _validadores;
+
+    public ComportamientoValidacion(IEnumerable<IValidator<TSolicitud>> validadores)
+        => _validadores = validadores;
+
+    public async Task<TRespuesta> Handle(TSolicitud solicitud, RequestHandlerDelegate<TRespuesta> siguiente, CancellationToken ct)
+    {
+        if (!_validadores.Any()) return await siguiente();
+
+        var contexto = new ValidationContext<TSolicitud>(solicitud);
+        var fallas = _validadores
+            .Select(v => v.Validate(contexto))
+            .SelectMany(r => r.Errors)
+            .Where(f => f is not null)
+            .ToList();
+
+        if (fallas.Any())
+            throw new ValidationException(fallas);
+
+        return await siguiente();
+    }
+}
+```
+
+---
+
+## 4. Capa de Infraestructura (`CarFix.Infrastructure`)
+## 5. Capa de Infraestructura (`CarFix.Infrastructure`)
+
+Implementa las interfaces definidas en Application/Domain. Aqui viven EF Core, los repositorios y los clientes de servicios externos (email, PDF, IA).
+
+**Paquetes NuGet:**
+- `Microsoft.EntityFrameworkCore.SqlServer`
+- `Microsoft.EntityFrameworkCore.Tools`
+- `Microsoft.AspNetCore.Authentication.JwtBearer`
+- `System.IdentityModel.Tokens.Jwt`
+
+### DbContext
+
+```csharp
+// CarFix.Infrastructure/Persistencia/CarFixDbContext.cs
+public class CarFixDbContext : DbContext, ICarFixDbContext
+{
+    public CarFixDbContext(DbContextOptions<CarFixDbContext> opciones) : base(opciones) { }
+
+    public DbSet<Cliente>          Clientes          => Set<Cliente>();
+    public DbSet<Vehiculo>         Vehiculos         => Set<Vehiculo>();
+    public DbSet<OrdenReparacion>  OrdenesReparacion => Set<OrdenReparacion>();
+    public DbSet<Reparacion>       Reparaciones      => Set<Reparacion>();
+    public DbSet<Repuesto>         Repuestos         => Set<Repuesto>();
+    public DbSet<Factura>          Facturas          => Set<Factura>();
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        modelBuilder.ApplyConfigurationsFromAssembly(Assembly.GetExecutingAssembly());
+        base.OnModelCreating(modelBuilder);
+    }
+
+    public async Task<int> GuardarCambiosAsync(CancellationToken ct = default)
+        => await base.SaveChangesAsync(ct);
+}
+```
+
+### Configuracion de Entidad (Fluent API)
+
+```csharp
+// CarFix.Infrastructure/Persistencia/Configuraciones/OrdenReparacionConfiguration.cs
+public class OrdenReparacionConfiguration : IEntityTypeConfiguration<OrdenReparacion>
+{
+    public void Configure(EntityTypeBuilder<OrdenReparacion> builder)
+    {
+        builder.ToTable("OrdenReparacion");
+        builder.HasKey(x => x.OrdenReparacionID);
+
+        builder.Property(x => x.ProblemaGeneral)
+               .HasMaxLength(200)
+               .IsRequired();
+
+        builder.HasMany(x => x.Reparaciones)
+               .WithOne()
+               .HasForeignKey("FacturaID")
+               .OnDelete(DeleteBehavior.Cascade);
+    }
+}
+```
+
+### Repositorio
+
+```csharp
+
+### Unidad de Trabajo
+
+```csharp
+// CarFix.Application/Comun/Interfaces/IUnidadTrabajo.cs (en Application)
+// CarFix.Domain/Interfaces/IUnidadTrabajo.cs
+public interface IUnidadTrabajo
+{
+    Task<int> GuardarCambiosAsync(CancellationToken ct = default);
+}
+
+// CarFix.Infrastructure/Persistencia/UnidadTrabajo.cs (en Infrastructure)
+// CarFix.Infrastructure/Persistencia/UnidadTrabajo.cs
+public class UnidadTrabajo : IUnidadTrabajo
+{
+    private readonly CarFixDbContext _contexto;
+
+}
+```
+
+### Servicio de Token JWT
+
+```csharp
+// CarFix.Domain/Interfaces/IServicioToken.cs
+public interface IServicioToken
+{
+    string GenerarToken(int usuarioId, string nombreUsuario, string rol);
+}
+
+// CarFix.Infrastructure/Seguridad/ServicioToken.cs
+public class ServicioToken : IServicioToken
+{
+    private readonly IConfiguration _config;
+
+    public ServicioToken(IConfiguration config) => _config = config;
+
+    public string GenerarToken(int usuarioId, string nombreUsuario, string rol)
+    {
+        var llave     = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_config["Jwt:Llave"]!));
+        var credenciales = new SigningCredentials(llave, SecurityAlgorithms.HmacSha256);
+
+        var reclamaciones = new[]
+        {
+            new Claim(ClaimTypes.NameIdentifier, usuarioId.ToString()),
+            new Claim(ClaimTypes.Name,            nombreUsuario),
+            new Claim(ClaimTypes.Role,            rol)
+        };
+
+        var token = new JwtSecurityToken(
+            issuer:             _config["Jwt:Emisor"],
+            audience:           _config["Jwt:Audiencia"],
+            claims:             reclamaciones,
+            expires:            DateTime.UtcNow.AddMinutes(double.Parse(_config["Jwt:ExpiracionMinutos"]!)),
+            signingCredentials: credenciales
+        );
+
+        return new JwtSecurityTokenHandler().WriteToken(token);
+    }
+}
+```
+
+### Registro de Servicios de Infrastructure
+
+```csharp
+
+{
+    public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration config)
+    {
+        // Base de datos
+        services.AddDbContext<CarFixDbContext>(opciones =>
+            opciones.UseSqlServer(config.GetConnectionString("CarFix")));
+
+
+        services.AddScoped<IUnidadTrabajo, UnidadTrabajo>();
+        services.AddScoped<IRepositorioOrdenReparacion, RepositorioOrdenReparacion>();
+
+        // JWT
+        services.AddScoped<IServicioToken, ServicioToken>();
+
+        services
+            .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+            .AddJwtBearer(opciones =>
+            {
+                opciones.TokenValidationParameters = new TokenValidationParameters
+                {
+                    ValidateIssuer           = true,
+                    ValidateAudience         = true,
+                    ValidateLifetime         = true,
+                    ValidateIssuerSigningKey = true,
+                    ValidIssuer              = config["Jwt:Emisor"],
+                    ValidAudience            = config["Jwt:Audiencia"],
+                    IssuerSigningKey         = new SymmetricSecurityKey(
+                                                  Encoding.UTF8.GetBytes(config["Jwt:Llave"]!))
+                };
+            });
+
+        services.AddAuthorization();
+
+        return services;
+    }
+}
+
+
+---
+
+## 5. Capa de API (`CarFix.API`)
+## 6. Capa de API (`CarFix.API`)
+
+Punto de entrada HTTP. Los endpoints son delegadores: reciben la solicitud, llaman a MediatR y devuelven la respuesta. **Cero logica de negocio aqui.**
+### Endpoint de Autenticacion (Login)
+
+### Minimal API con `TypedResults` (.NET 10)
+```csharp
+// CarFix.API/Endpoints/EndpointsAutenticacion.cs
+public static class EndpointsAutenticacion
+{
+    public static void MapearAutenticacion(this IEndpointRouteBuilder app)
+    {
+        var grupo = app.MapGroup("/api/autenticacion")
+                       .WithTags("Autenticacion")
+                       .WithOpenApi()
+                       .AllowAnonymous();
+
+En .NET 10 se usa `TypedResults` para que los endpoints puedan inferir el tipo de respuesta en el esquema OpenAPI generado automaticamente.
+        grupo.MapPost("/iniciar-sesion", async Task<Results<Ok<RespuestaTokenDto>, UnauthorizedHttpResult>>
+            (IniciarSesionCommand cmd, ISender sender) =>
+        {
+            var resultado = await sender.Send(cmd);
+            return resultado.EsExitoso
+                ? TypedResults.Ok(resultado.Valor)
+                : TypedResults.Unauthorized();
+        })
+        .WithName("IniciarSesion")
+        .WithSummary("Genera un token JWT para acceder a los endpoints protegidos");
+    }
+}
+
+// DTO de respuesta
+public record RespuestaTokenDto(string Token, DateTime Expiracion);
+```
+
+### Endpoints Protegidos con JWT
+
+```csharp
+// CarFix.API/Endpoints/EndpointsOrdenes.cs
+public static class EndpointsOrdenes
+
+    {
+        var grupo = app.MapGroup("/api/ordenes")
+                       .WithTags("Ordenes")
+                       .WithOpenApi();
+                       .WithOpenApi()
+                       .RequireAuthorization(); // Protege todo el grupo con JWT
+
+        grupo.MapGet("{id:int}", async Task<Results<Ok<OrdenReparacionDto>, NotFound<string>>>
+            (int id, ISender sender) =>
+
+                ? TypedResults.Ok(resultado.Valor)
+                : TypedResults.NotFound(resultado.Error);
+        })
+        .WithName("ObtenerOrdenPorId")
+        .WithSummary("Obtiene una orden de reparacion por ID");
+        .WithName("ObtenerOrdenPorId");
+
+        grupo.MapPost("/", async Task<Results<Created<int>, BadRequest<string>>>
+            (CrearOrdenCommand cmd, ISender sender) =>
+
+                ? TypedResults.Created($"/api/ordenes/{resultado.Valor}", resultado.Valor)
+                : TypedResults.BadRequest(resultado.Error);
+        })
+        .WithName("CrearOrden")
+        .WithSummary("Crea una nueva orden de reparacion");
+        .WithName("CrearOrden");
+    }
+}
+```
+
+### Manejador de Excepciones Global (`IExceptionHandler` — .NET 10)
+### Manejador de Excepciones Global
+
+.NET 10 incluye `IExceptionHandler` y `ProblemDetails` de forma nativa. No se necesita middleware manual.
+
+```csharp
+// CarFix.API/Excepciones/ManejadorExcepciones.cs
+public class ManejadorExcepciones : IExceptionHandler
+
+    public ManejadorExcepciones(ILogger<ManejadorExcepciones> logger)
+        => _logger = logger;
+
+    public async ValueTask<bool> TryHandleAsync(
+        HttpContext       contextoHttp,
+        Exception         excepcion,
+        CancellationToken ct)
+    public async ValueTask<bool> TryHandleAsync(HttpContext contextoHttp, Exception excepcion, CancellationToken ct)
+    {
+        var (codigoEstado, titulo, detalle) = excepcion switch
+        {
+
+}
+```
+
+### Program.cs (.NET 10)
+### Program.cs
+
+```csharp
+// CarFix.API/Program.cs
+
+var app = builder.Build();
+
+app.UseExceptionHandler();
+app.UseAuthentication();
+app.UseAuthorization();
+
+if (app.Environment.IsDevelopment())
+    app.MapOpenApi(); // Expone /openapi/v1.json
+    app.MapOpenApi();
+
+app.UseHttpsRedirection();
+
+app.MapearAutenticacion();
+app.MapearOrdenes();
+// app.MapearClientes();
+// app.MapearFacturas();
+
+app.Run();
+```
+
+### Cadena de conexion (`appsettings.json`)
+### Configuracion (`appsettings.json`)
+
+```json
+{
+  "ConnectionStrings": {
+    "CarFix": "Server=localhost\\SQL2022;Database=CAR_FIX;Integrated Security=True;TrustServerCertificate=True"
+  },
+  "Jwt": {
+    "Llave": "clave-secreta-minimo-32-caracteres-aqui",
+    "Emisor": "CarFix.API",
+    "Audiencia": "CarFix.Cliente",
+    "ExpiracionMinutos": "60"
+  }
+}
+```
+
+> La `Jwt:Llave` nunca debe ir en el repositorio. Usar `dotnet user-secrets` en desarrollo y variables de entorno en produccion.
+
+---
+
+## 6. Patrones y Reglas Transversales
+## 7. Patrones y Reglas Transversales
+
+### Estructura de carpetas dentro de Application
+### Estructura de carpetas completa
+
+Organizar por **feature**, no por tipo tecnico:
+
+```text
+CarFix.Domain/
+├── Excepciones/
+│   └── ExcepcionDominio.cs
+└── Interfaces/
+    ├── ICarFixDbContext.cs
+    ├── IUnidadTrabajo.cs
+    ├── IServicioToken.cs
+    └── IRepositorioOrdenReparacion.cs
+
+CarFix.Application/
+├── Comun/
+│   ├── Comportamientos/
+│   │   └── ComportamientoValidacion.cs
+│   ├── Interfaces/
+│   │   ├── ICarFixDbContext.cs
+│   │   └── IUnidadTrabajo.cs
+│   └── Resultado.cs
+├── DependencyInjection.cs
+└── Features/
+    ├── Autenticacion/
+    │   └── Commands/
+    │       └── IniciarSesion/
+    │           ├── IniciarSesionCommand.cs
+    │           ├── IniciarSesionHandler.cs
+    │           └── IniciarSesionValidator.cs
+    ├── OrdenesReparacion/
+    │   ├── Commands/
+    │   │   └── CrearOrden/
+    │   │       ├── CrearOrdenCommand.cs
+    │   │       ├── CrearOrdenHandler.cs
+    │   │       └── CrearOrdenValidator.cs
+    │   └── Queries/
+    │       └── ObtenerOrdenPorId/
+    │           ├── ObtenerOrdenPorIdQuery.cs
+    │           ├── ObtenerOrdenPorIdHandler.cs
+    │           └── OrdenReparacionDto.cs
+    │   ├── Commands/CrearOrden/
+    │   └── Queries/ObtenerOrdenPorId/
+    ├── Clientes/
+    ├── Facturas/
+    └── Repuestos/
+
+CarFix.Infrastructure/
+├── DependencyInjection.cs
+├── Persistencia/
+│   ├── CarFixDbContext.cs              # Generado por EF — no editar
+│   ├── CarFixDbContextExtension.cs     # Clase parcial propia
+│   ├── Generado/                       # Entidades generadas por EF — no editar
+│   ├── Extensiones/                    # Clases parciales con comportamiento de dominio
+│   ├── Repositorios/
+│   │   └── RepositorioOrdenReparacion.cs
+│   └── UnidadTrabajo.cs
+└── Seguridad/
+    └── ServicioToken.cs
+
+CarFix.API/
+├── Program.cs
+├── Endpoints/
+│   ├── EndpointsAutenticacion.cs
+│   ├── EndpointsOrdenes.cs
+│   └── EndpointsClientes.cs
+└── Excepciones/
+    └── ManejadorExcepciones.cs
+```
+
+### Evitar (Anti-patrones)
+
+| Anti-patron | Correccion |
+|---|---|
+| Logica de negocio en endpoints | Mover al Handler o a la entidad de dominio |
+| Entidades anemicas con solo getters/setters publicos | Encapsular comportamiento con metodos de dominio |
+| Repositorio generico `IRepositorio<T>` con CRUD global | Repositorios especificos con metodos con nombre de dominio |
+| `DbContext` inyectado directo en handlers de commands | Usar `IUnidadTrabajo` en commands; `ICarFixDbContext` en queries |
+| `try/catch` para controlar flujo de negocio | Usar `Resultado<T>` para errores esperados; excepciones solo para lo verdaderamente excepcional |
+| DTOs que exponen el modelo de dominio directamente | Mapear siempre a DTOs especificos por caso de uso |
+| Toda la logica en un unico proyecto | Respetar la separacion en 4 proyectos/capas |
+| Editar archivos en `Persistencia/Generado/` | Usar clases parciales en `Persistencia/Extensiones/` |
+| Crear entidades a mano (Code First) | Siempre usar scaffold desde la BD |
+| Logica de negocio en endpoints | Mover al Handler o a la clase parcial de la entidad |
+| Exponer el DbContext fuera de Infrastructure | Inyectar `ICarFixDbContext` (interfaz) en queries |
+| Guardar la llave JWT en `appsettings.json` en produccion | Usar variables de entorno o secrets manager |
+| Endpoints sin `RequireAuthorization()` | Todo endpoint (excepto login) debe estar protegido |
+
+---
+
+## 7. Resumen de Capas (Cheat Sheet)
+## 8. Resumen de Capas (Cheat Sheet)
+
+| Capa | Proyecto | Responsabilidad | Conoce a |
+|---|---|---|---|
+| **Domain** | `CarFix.Domain` | Entidades, interfaces de repositorio, excepciones de dominio | Nadie |
+| **Application** | `CarFix.Application` | Casos de uso (Commands/Queries), DTOs, validaciones, interfaces de servicios externos | Domain |
+| **Infrastructure** | `CarFix.Infrastructure` | EF Core, repositorios, servicios de email/PDF/IA, migraciones | Application + Domain |
+| **API** | `CarFix.API` | Endpoints HTTP, manejador de excepciones, configuracion del host | Application + Infrastructure |
+| **Domain** | `CarFix.Domain` | Interfaces de repositorio, `IUnidadTrabajo`, `IServicioToken`, `ExcepcionDominio` | Nadie |
+| **Application** | `CarFix.Application` | Casos de uso CQRS, `Resultado<T>`, DTOs, validaciones | Domain |
+| **Infrastructure** | `CarFix.Infrastructure` | EF Core DB First, repositorios, `UnidadTrabajo`, `ServicioToken`, JWT config | Application + Domain |
+| **API** | `CarFix.API` | Endpoints HTTP, auth JWT, `ManejadorExcepciones`, `Program.cs` | Application + Infrastructure |
+
+Ahora actualizo la memoria con los cambios confirmados:
+
+  Wrote 1 memory
+
+Listo. Los cambios principales incorporados:
+
+Database First:
+- Las entidades se generan con dotnet ef dbcontext scaffold — nunca a mano
+- Archivos generados van a Persistencia/Generado/ y nunca se tocan
+- El comportamiento de dominio se agrega con clases parciales en Persistencia/Extensiones/
+- El CarFixDbContext generado también se extiende por clase parcial para implementar ICarFixDbContext
+- Los nombres de entidades y propiedades quedan exactamente como los define la BD
+
+JWT:
+- ServicioToken en Infrastructure genera el token con claims (NameIdentifier, Name, Role)
+- Configuración en appsettings.json con Llave, Emisor, Audiencia, ExpiracionMinutos
+- La llave secreta nunca va en el repositorio — usar dotnet user-secrets en desarrollo
+- Todos los grupos de endpoints usan .RequireAuthorization()
+- El único endpoint público es POST /api/autenticacion/iniciar-sesion
+- UseAuthentication() y UseAuthorization() registrados en el orden correcto en Program.cs
+
+✻ Churned for 2m 48s
+
+> Los proyectos en las solución deberían estar en 4 carpetas 1.WebApi 2.Dominio 3.Aplicacion 4.Infraestructura
+
+Simple, solo hay que renombrar los proyectos y carpetas en toda la guía. Voy a hacer los reemplazos en el archivo.
+
+● Update(.claude\arquitectura_limpia_backend.md)
+Error editing file
+
+  Read 1 file
+
+● Update(.claude\arquitectura_limpia_backend.md)
+Added 5 lines, removed 5 lines
+
+```text
+CarFix.sln
+├── CarFix.Domain/           # Interfaces, excepciones y contratos — sin dependencias externas
+├── CarFix.Application/      # Casos de uso (CQRS) — depende solo de Domain
+├── CarFix.Infrastructure/   # EF Core Database First, repositorios, JWT, servicios externos
+└── CarFix.API/              # Endpoints HTTP, autenticacion, configuracion del host
+├── Dominio/           → CarFix.Dominio          # Interfaces, excepciones y contratos
+├── Aplicacion/        → CarFix.Aplicacion       # Casos de uso (CQRS) — depende solo de Dominio
+├── Infraestructura/   → CarFix.Infraestructura  # EF Core DB First, repositorios, JWT, servicios externos
+└── WebApi/            → CarFix.WebApi           # Endpoints HTTP, autenticacion, configuracion del host
+```
+
+**Regla de oro:** Domain no conoce a nadie. Application no conoce a Infrastructure ni a API. Infrastructure no conoce a API.
+**Regla de oro:** Dominio no conoce a nadie. Aplicacion no conoce a Infraestructura ni a WebApi. Infraestructura no conoce a WebApi.
+
+---
+
+
+Ahora reemplazo todos los nombres de proyecto en el resto del archivo:
+
+● Update(.claude\arquitectura_limpia_backend.md)
+Added 10 lines, removed 10 lines
+
+---
+
+## 3. Capa de Dominio (`CarFix.Domain`)
+## 3. Capa de Dominio (`CarFix.Dominio`)
+
+Con Database First, esta capa contiene **solo contratos y excepciones**. Las entidades viven en Infrastructure (generadas por EF).
+
+```text
+CarFix.Domain/
+CarFix.Dominio/
+├── Interfaces/
+│   ├── ICarFixDbContext.cs
+│   ├── IRepositorioOrdenReparacion.cs
+
+### Interfaz del DbContext (para queries directas)
+
+```csharp
+// CarFix.Domain/Interfaces/ICarFixDbContext.cs
+// CarFix.Dominio/Interfaces/ICarFixDbContext.cs
+public interface ICarFixDbContext
+{
+    DbSet<Cliente>          Clientes          { get; }
+
+### Interfaces de Repositorio
+
+```csharp
+// CarFix.Domain/Interfaces/IRepositorioOrdenReparacion.cs
+// CarFix.Dominio/Interfaces/IRepositorioOrdenReparacion.cs
+public interface IRepositorioOrdenReparacion
+{
+    Task<OrdenReparacion?>             ObtenerPorIdAsync(int id, CancellationToken ct = default);
+
+### Excepcion de Dominio
+
+```csharp
+// CarFix.Domain/Excepciones/ExcepcionDominio.cs
+// CarFix.Dominio/Excepciones/ExcepcionDominio.cs
+public class ExcepcionDominio : Exception
+{
+    public ExcepcionDominio(string mensaje) : base(mensaje) { }
+
+
+## 4. Capa de Aplicacion (`CarFix.Application`)
+
+Orquesta los casos de uso con **CQRS y MediatR**. Depende solo de `CarFix.Domain`.
+Orquesta los casos de uso con **CQRS y MediatR**. Depende solo de `CarFix.Dominio`.
+
+**Paquetes NuGet:**
+- `MediatR`
+
+### Unidad de Trabajo
+
+```csharp
+// CarFix.Domain/Interfaces/IUnidadTrabajo.cs
+// CarFix.Dominio/Interfaces/IUnidadTrabajo.cs
+public interface IUnidadTrabajo
+{
+    Task<int> GuardarCambiosAsync(CancellationToken ct = default);
+
+### Servicio de Token JWT
+
+```csharp
+// CarFix.Domain/Interfaces/IServicioToken.cs
+// CarFix.Dominio/Interfaces/IServicioToken.cs
+public interface IServicioToken
+{
+    string GenerarToken(int usuarioId, string nombreUsuario, string rol);
+
+### Estructura de carpetas completa
+
+```text
+CarFix.Domain/
+CarFix.Dominio/
+├── Excepciones/
+│   └── ExcepcionDominio.cs
+└── Interfaces/
+
+
+| Capa | Proyecto | Responsabilidad | Conoce a |
+|---|---|---|---|
+| **Domain** | `CarFix.Domain` | Interfaces de repositorio, `IUnidadTrabajo`, `IServicioToken`, `ExcepcionDominio` | Nadie |
+| **Domain** | `CarFix.Dominio` | Interfaces de repositorio, `IUnidadTrabajo`, `IServicioToken`, `ExcepcionDominio` | Nadie |
+| **Application** | `CarFix.Application` | Casos de uso CQRS, `Resultado<T>`, DTOs, validaciones | Domain |
+| **Infrastructure** | `CarFix.Infrastructure` | EF Core DB First, repositorios, `UnidadTrabajo`, `ServicioToken`, JWT config | Application + Domain |
+| **API** | `CarFix.API` | Endpoints HTTP, auth JWT, `ManejadorExcepciones`, `Program.cs` | Application + Infrastructure |
+
+● Update(.claude\arquitectura_limpia_backend.md)
+Added 10 lines, removed 10 lines
+
+---
+
+## 4. Capa de Aplicacion (`CarFix.Application`)
+## 4. Capa de Aplicacion (`CarFix.Aplicacion`)
+
+Orquesta los casos de uso con **CQRS y MediatR**. Depende solo de `CarFix.Dominio`.
+
+
+### Patron Resultado
+
+```csharp
+// CarFix.Application/Comun/Resultado.cs
+// CarFix.Aplicacion/Comun/Resultado.cs
+public class Resultado<T>
+{
+    public bool    EsExitoso { get; }
+
+### Comando
+
+```csharp
+// CarFix.Application/Features/OrdenesReparacion/Commands/CrearOrden/CrearOrdenCommand.cs
+// CarFix.Aplicacion/Features/OrdenesReparacion/Commands/CrearOrden/CrearOrdenCommand.cs
+public record CrearOrdenCommand(
+    int    VehiculoID,
+    string ProblemaGeneral
+
+### Handler del Comando
+
+```csharp
+// CarFix.Application/Features/OrdenesReparacion/Commands/CrearOrden/CrearOrdenHandler.cs
+// CarFix.Aplicacion/Features/OrdenesReparacion/Commands/CrearOrden/CrearOrdenHandler.cs
+public class CrearOrdenHandler : IRequestHandler<CrearOrdenCommand, Resultado<int>>
+{
+    private readonly IRepositorioOrdenReparacion _repositorio;
+
+### Validador
+
+```csharp
+// CarFix.Application/Features/OrdenesReparacion/Commands/CrearOrden/CrearOrdenValidator.cs
+// CarFix.Aplicacion/Features/OrdenesReparacion/Commands/CrearOrden/CrearOrdenValidator.cs
+public class CrearOrdenValidator : AbstractValidator<CrearOrdenCommand>
+{
+    public CrearOrdenValidator()
+
+### Query (Lectura directa al DbContext)
+
+```csharp
+// CarFix.Application/Features/OrdenesReparacion/Queries/ObtenerOrdenPorId/ObtenerOrdenPorIdQuery.cs
+// CarFix.Aplicacion/Features/OrdenesReparacion/Queries/ObtenerOrdenPorId/ObtenerOrdenPorIdQuery.cs
+public record ObtenerOrdenPorIdQuery(int Id) : IRequest<Resultado<OrdenReparacionDto>>;
+
+// CarFix.Application/Features/OrdenesReparacion/Queries/ObtenerOrdenPorId/ObtenerOrdenPorIdHandler.cs
+// CarFix.Aplicacion/Features/OrdenesReparacion/Queries/ObtenerOrdenPorId/ObtenerOrdenPorIdHandler.cs
+public class ObtenerOrdenPorIdHandler : IRequestHandler<ObtenerOrdenPorIdQuery, Resultado<OrdenReparacionDto>>
+{
+    private readonly ICarFixDbContext _contexto;
+
+### Registro de Servicios de Application
+
+```csharp
+// CarFix.Application/DependencyInjection.cs
+// CarFix.Aplicacion/DependencyInjection.cs
+public static class DependencyInjection
+{
+    public static IServiceCollection AddApplication(this IServiceCollection services)
+
+    ├── IServicioToken.cs
+    └── IRepositorioOrdenReparacion.cs
+
+CarFix.Application/
+CarFix.Aplicacion/
+├── Comun/
+│   ├── Comportamientos/
+│   │   └── ComportamientoValidacion.cs
+
+| Capa | Proyecto | Responsabilidad | Conoce a |
+|---|---|---|---|
+| **Domain** | `CarFix.Dominio` | Interfaces de repositorio, `IUnidadTrabajo`, `IServicioToken`, `ExcepcionDominio` | Nadie |
+| **Application** | `CarFix.Application` | Casos de uso CQRS, `Resultado<T>`, DTOs, validaciones | Domain |
+| **Application** | `CarFix.Aplicacion` | Casos de uso CQRS, `Resultado<T>`, DTOs, validaciones | Domain |
+| **Infrastructure** | `CarFix.Infrastructure` | EF Core DB First, repositorios, `UnidadTrabajo`, `ServicioToken`, JWT config | Application + Domain |
+| **API** | `CarFix.API` | Endpoints HTTP, auth JWT, `ManejadorExcepciones`, `Program.cs` | Application + Infrastructure |
+
+● Update(.claude\arquitectura_limpia_backend.md)
+Added 15 lines, removed 15 lines
+  --output-dir Persistencia/Generado \
+  --context-dir Persistencia \
+  --context CarFixDbContext \
+  --namespace CarFix.Infrastructure.Persistencia.Generado \
+  --context-namespace CarFix.Infrastructure.Persistencia \
+  --namespace CarFix.Infraestructura.Persistencia.Generado \
+  --context-namespace CarFix.Infraestructura.Persistencia \
+  --force \
+  --no-onconfiguring
+  --project CarFix.Infrastructure
+  --project CarFix.Infraestructura
+```
+
+Opciones clave:
+
+### Estructura generada
+
+```text
+CarFix.Infrastructure/
+CarFix.Infraestructura/
+└── Persistencia/
+    ├── CarFixDbContext.cs          # Generado — no editar
+    └── Generado/
+
+Para agregar comportamiento de dominio sin tocar los archivos generados, se usan clases parciales:
+
+```csharp
+// CarFix.Infrastructure/Persistencia/Extensiones/OrdenReparacionExtension.cs
+namespace CarFix.Infrastructure.Persistencia.Generado;
+// CarFix.Infraestructura/Persistencia/Extensiones/OrdenReparacionExtension.cs
+namespace CarFix.Infraestructura.Persistencia.Generado;
+
+public partial class OrdenReparacion
+{
+
+El DbContext generado se extiende para implementar la interfaz `ICarFixDbContext` sin tocar el archivo generado:
+
+```csharp
+// CarFix.Infrastructure/Persistencia/CarFixDbContextExtension.cs
+namespace CarFix.Infrastructure.Persistencia;
+// CarFix.Infraestructura/Persistencia/CarFixDbContextExtension.cs
+namespace CarFix.Infraestructura.Persistencia;
+
+public partial class CarFixDbContext : ICarFixDbContext
+{
+
+
+---
+
+## 5. Capa de Infraestructura (`CarFix.Infrastructure`)
+## 5. Capa de Infraestructura (`CarFix.Infraestructura`)
+
+**Paquetes NuGet:**
+- `Microsoft.EntityFrameworkCore.SqlServer`
+
+### Repositorio
+
+```csharp
+// CarFix.Infrastructure/Persistencia/Repositorios/RepositorioOrdenReparacion.cs
+// CarFix.Infraestructura/Persistencia/Repositorios/RepositorioOrdenReparacion.cs
+public class RepositorioOrdenReparacion : IRepositorioOrdenReparacion
+{
+    private readonly CarFixDbContext _contexto;
+
+    Task<int> GuardarCambiosAsync(CancellationToken ct = default);
+}
+
+// CarFix.Infrastructure/Persistencia/UnidadTrabajo.cs
+// CarFix.Infraestructura/Persistencia/UnidadTrabajo.cs
+public class UnidadTrabajo : IUnidadTrabajo
+{
+    private readonly CarFixDbContext _contexto;
+
+    string GenerarToken(int usuarioId, string nombreUsuario, string rol);
+}
+
+// CarFix.Infrastructure/Seguridad/ServicioToken.cs
+// CarFix.Infraestructura/Seguridad/ServicioToken.cs
+public class ServicioToken : IServicioToken
+{
+    private readonly IConfiguration _config;
+
+### Registro de Servicios de Infrastructure
+
+```csharp
+// CarFix.Infrastructure/DependencyInjection.cs
+// CarFix.Infraestructura/DependencyInjection.cs
+public static class DependencyInjection
+{
+    public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration config)
+
+    ├── Facturas/
+    └── Repuestos/
+
+CarFix.Infrastructure/
+CarFix.Infraestructura/
+├── DependencyInjection.cs
+├── Persistencia/
+│   ├── CarFixDbContext.cs              # Generado por EF — no editar
+
+|---|---|---|---|
+| **Domain** | `CarFix.Dominio` | Interfaces de repositorio, `IUnidadTrabajo`, `IServicioToken`, `ExcepcionDominio` | Nadie |
+| **Application** | `CarFix.Aplicacion` | Casos de uso CQRS, `Resultado<T>`, DTOs, validaciones | Domain |
+| **Infrastructure** | `CarFix.Infrastructure` | EF Core DB First, repositorios, `UnidadTrabajo`, `ServicioToken`, JWT config | Application + Domain |
+| **Infrastructure** | `CarFix.Infraestructura` | EF Core DB First, repositorios, `UnidadTrabajo`, `ServicioToken`, JWT config | Application + Domain |
+| **API** | `CarFix.API` | Endpoints HTTP, auth JWT, `ManejadorExcepciones`, `Program.cs` | Application + Infrastructure |
+
+● Update(.claude\arquitectura_limpia_backend.md)
+Added 8 lines, removed 8 lines
+
+---
+
+## 6. Capa de API (`CarFix.API`)
+## 6. Capa de API (`CarFix.WebApi`)
+
+### Endpoint de Autenticacion (Login)
+
+```csharp
+// CarFix.API/Endpoints/EndpointsAutenticacion.cs
+// CarFix.WebApi/Endpoints/EndpointsAutenticacion.cs
+public static class EndpointsAutenticacion
+{
+    public static void MapearAutenticacion(this IEndpointRouteBuilder app)
+
+### Endpoints Protegidos con JWT
+
+```csharp
+// CarFix.API/Endpoints/EndpointsOrdenes.cs
+// CarFix.WebApi/Endpoints/EndpointsOrdenes.cs
+public static class EndpointsOrdenes
+{
+    public static void MapearOrdenes(this IEndpointRouteBuilder app)
+
+### Manejador de Excepciones Global
+
+```csharp
+// CarFix.API/Excepciones/ManejadorExcepciones.cs
+// CarFix.WebApi/Excepciones/ManejadorExcepciones.cs
+public class ManejadorExcepciones : IExceptionHandler
+{
+    private readonly ILogger<ManejadorExcepciones> _logger;
+
+### Program.cs
+
+```csharp
+// CarFix.API/Program.cs
+// CarFix.WebApi/Program.cs
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services
+
+  },
+  "Jwt": {
+    "Llave": "clave-secreta-minimo-32-caracteres-aqui",
+    "Emisor": "CarFix.API",
+    "Emisor": "CarFix.WebApi",
+    "Audiencia": "CarFix.Cliente",
+    "ExpiracionMinutos": "60"
+  }
+
+└── Seguridad/
+    └── ServicioToken.cs
+
+CarFix.API/
+CarFix.WebApi/
+├── Program.cs
+├── Endpoints/
+│   ├── EndpointsAutenticacion.cs
+
+| **Domain** | `CarFix.Dominio` | Interfaces de repositorio, `IUnidadTrabajo`, `IServicioToken`, `ExcepcionDominio` | Nadie |
+| **Application** | `CarFix.Aplicacion` | Casos de uso CQRS, `Resultado<T>`, DTOs, validaciones | Domain |
+| **Infrastructure** | `CarFix.Infraestructura` | EF Core DB First, repositorios, `UnidadTrabajo`, `ServicioToken`, JWT config | Application + Domain |
+| **API** | `CarFix.API` | Endpoints HTTP, auth JWT, `ManejadorExcepciones`, `Program.cs` | Application + Infrastructure |
+| **API** | `CarFix.WebApi` | Endpoints HTTP, auth JWT, `ManejadorExcepciones`, `Program.cs` | Application + Infrastructure |
+
+Ahora actualizo los comentarios de rutas de archivos y namespaces internos, y la sección de estructura de carpetas al final:
+
+  Read 1 file
+
+● Update(.claude\arquitectura_limpia_backend.md)
+Added 1 line, removed 1 line
+
+Las entidades **se generan automaticamente desde la base de datos** con el comando `scaffold`. **Nunca se crean a mano.** Al cambiar el esquema de BD, se regeneran.
+
+Los archivos generados van a `Infrastructure/Persistencia/Generado/` y **nunca se editan directamente**. El comportamiento de dominio se agrega mediante **clases parciales** en `Infrastructure/Persistencia/Extensiones/`.
+Los archivos generados van a `Infraestructura/Persistencia/Generado/` y **nunca se editan directamente**. El comportamiento de dominio se agrega mediante **clases parciales** en `Infraestructura/Persistencia/Extensiones/
+`.
+
+### Comando de Scaffolding
+
+
+Ahora leo la sección de estructura de carpetas al final para actualizarla:
+
+  Read 1 file
+
+Ahora actualizo la estructura de carpetas completa para mostrar los 4 directorios raíz, y corrijo los métodos de registro en español:
+
+● Update(.claude\arquitectura_limpia_backend.md)
+Added 55 lines, removed 50 lines
+### Estructura de carpetas completa
+
+```text
+CarFix.Dominio/
+├── Excepciones/
+│   └── ExcepcionDominio.cs
+└── Interfaces/
+    ├── ICarFixDbContext.cs
+    ├── IUnidadTrabajo.cs
+    ├── IServicioToken.cs
+    └── IRepositorioOrdenReparacion.cs
+
+CarFix.Aplicacion/
+├── Comun/
+│   ├── Comportamientos/
+│   │   └── ComportamientoValidacion.cs
+│   └── Resultado.cs
+├── DependencyInjection.cs
+└── Features/
+    ├── Autenticacion/
+    │   └── Commands/
+    │       └── IniciarSesion/
+    │           ├── IniciarSesionCommand.cs
+    │           ├── IniciarSesionHandler.cs
+    │           └── IniciarSesionValidator.cs
+    ├── OrdenesReparacion/
+    │   ├── Commands/CrearOrden/
+    │   └── Queries/ObtenerOrdenPorId/
+    ├── Clientes/
+    ├── Facturas/
+    └── Repuestos/
+
+CarFix.Infraestructura/
+├── DependencyInjection.cs
+├── Persistencia/
+│   ├── CarFixDbContext.cs              # Generado por EF — no editar
+│   ├── CarFixDbContextExtension.cs     # Clase parcial propia
+│   ├── Generado/                       # Entidades generadas por EF — no editar
+│   ├── Extensiones/                    # Clases parciales con comportamiento de dominio
+│   ├── Repositorios/
+│   │   └── RepositorioOrdenReparacion.cs
+│   └── UnidadTrabajo.cs
+└── Seguridad/
+    └── ServicioToken.cs
+
+CarFix.WebApi/
+├── Program.cs
+├── Endpoints/
+│   ├── EndpointsAutenticacion.cs
+│   ├── EndpointsOrdenes.cs
+│   └── EndpointsClientes.cs
+└── Excepciones/
+    └── ManejadorExcepciones.cs
+CarFix.sln
+│
+├── Dominio/                            ← carpeta fisica en disco
+│   └── CarFix.Dominio.csproj
+│       ├── Excepciones/
+│       │   └── ExcepcionDominio.cs
+│       └── Interfaces/
+│           ├── ICarFixDbContext.cs
+│           ├── IUnidadTrabajo.cs
+│           ├── IServicioToken.cs
+│           └── IRepositorioOrdenReparacion.cs
+│
+├── Aplicacion/                         ← carpeta fisica en disco
+│   └── CarFix.Aplicacion.csproj
+│       ├── Comun/
+│       │   ├── Comportamientos/
+│       │   │   └── ComportamientoValidacion.cs
+│       │   └── Resultado.cs
+│       ├── InjeccionDependencias.cs
+│       └── Features/
+│           ├── Autenticacion/
+│           │   └── Commands/IniciarSesion/
+│           │       ├── IniciarSesionCommand.cs
+│           │       ├── IniciarSesionHandler.cs
+│           │       └── IniciarSesionValidator.cs
+│           ├── OrdenesReparacion/
+│           │   ├── Commands/CrearOrden/
+│           │   └── Queries/ObtenerOrdenPorId/
+│           ├── Clientes/
+│           ├── Facturas/
+│           └── Repuestos/
+│
+├── Infraestructura/                    ← carpeta fisica en disco
+│   └── CarFix.Infraestructura.csproj
+│       ├── InjeccionDependencias.cs
+│       ├── Persistencia/
+│       │   ├── CarFixDbContext.cs          # Generado por EF — no editar
+│       │   ├── CarFixDbContextExtension.cs # Clase parcial propia
+│       │   ├── Generado/                   # Entidades generadas por EF — no editar
+│       │   ├── Extensiones/                # Clases parciales con comportamiento
+│       │   ├── Repositorios/
+│       │   │   └── RepositorioOrdenReparacion.cs
+│       │   └── UnidadTrabajo.cs
+│       └── Seguridad/
+│           └── ServicioToken.cs
+│
+└── WebApi/                             ← carpeta fisica en disco
+    └── CarFix.WebApi.csproj
+        ├── Program.cs
+        ├── Endpoints/
+        │   ├── EndpointsAutenticacion.cs
+        │   ├── EndpointsOrdenes.cs
+        │   └── EndpointsClientes.cs
+        └── Excepciones/
+            └── ManejadorExcepciones.cs
+```
+
+### Evitar (Anti-patrones)
+
+Ahora corrijo los nombres de los métodos de registro de DI a español y el DependencyInjection.cs → InjeccionDependencias.cs:
+
+● Update(.claude\arquitectura_limpia_backend.md)
+Added 2 lines, removed 2 lines
+### Registro de Servicios de Application
+
+```csharp
+// CarFix.Aplicacion/DependencyInjection.cs
+// CarFix.Aplicacion/InjeccionDependencias.cs
+public static class DependencyInjection
+{
+    public static IServiceCollection AddApplication(this IServiceCollection services)
+
+### Registro de Servicios de Infrastructure
+
+```csharp
+// CarFix.Infraestructura/DependencyInjection.cs
+// CarFix.Infraestructura/InjeccionDependencias.cs
+public static class DependencyInjection
+{
+    public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration config)
+
+● Update(.claude\arquitectura_limpia_backend.md)
+Added 2 lines, removed 2 lines
+
+```csharp
+// CarFix.Aplicacion/InjeccionDependencias.cs
+public static class DependencyInjection
+public static class InjeccionDependencias
+{
+    public static IServiceCollection AddApplication(this IServiceCollection services)
+    {
+
+
+```csharp
+// CarFix.Infraestructura/InjeccionDependencias.cs
+public static class DependencyInjection
+public static class InjeccionDependencias
+{
+    public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration config)
+    {
+
+● Update(.claude\arquitectura_limpia_backend.md)
+Added 1 line, removed 1 line
+// CarFix.Aplicacion/InjeccionDependencias.cs
+public static class InjeccionDependencias
+{
+    public static IServiceCollection AddApplication(this IServiceCollection services)
+    public static IServiceCollection AgregarAplicacion(this IServiceCollection services)
+    {
+        services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(Assembly.GetExecutingAssembly()));
+        services.AddValidatorsFromAssembly(Assembly.GetExecutingAssembly());
+
+● Update(.claude\arquitectura_limpia_backend.md)
+Added 1 line, removed 1 line
+// CarFix.Infraestructura/InjeccionDependencias.cs
+public static class InjeccionDependencias
+{
+    public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration config)
+    public static IServiceCollection AgregarInfraestructura(this IServiceCollection services, IConfiguration config)
+    {
+        // Base de datos
+        services.AddDbContext<CarFixDbContext>(opciones =>
+
+● Update(.claude\arquitectura_limpia_backend.md)
+Added 2 lines, removed 2 lines
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services
+    .AddApplication()
+    .AddInfrastructure(builder.Configuration);
+    .AgregarAplicacion()
+    .AgregarInfraestructura(builder.Configuration);
+
+builder.Services.AddProblemDetails();
+builder.Services.AddExceptionHandler<ManejadorExcepciones>();
+
+Finalmente actualizo el cheat sheet al final:
+
+● Update(.claude\arquitectura_limpia_backend.md)
+Added 5 lines, removed 5 lines
+
+## 8. Resumen de Capas (Cheat Sheet)
+
+| Capa | Proyecto | Responsabilidad | Conoce a |
+| Capa | Carpeta / Proyecto | Responsabilidad | Conoce a |
+|---|---|---|---|
+| **Domain** | `CarFix.Dominio` | Interfaces de repositorio, `IUnidadTrabajo`, `IServicioToken`, `ExcepcionDominio` | Nadie |
+| **Application** | `CarFix.Aplicacion` | Casos de uso CQRS, `Resultado<T>`, DTOs, validaciones | Domain |
+| **Infrastructure** | `CarFix.Infraestructura` | EF Core DB First, repositorios, `UnidadTrabajo`, `ServicioToken`, JWT config | Application + Domain |
+| **API** | `CarFix.WebApi` | Endpoints HTTP, auth JWT, `ManejadorExcepciones`, `Program.cs` | Application + Infrastructure |
+| **Dominio** | `Dominio/CarFix.Dominio` | Interfaces de repositorio, `IUnidadTrabajo`, `IServicioToken`, `ExcepcionDominio` | Nadie |
+| **Aplicacion** | `Aplicacion/CarFix.Aplicacion` | Casos de uso CQRS, `Resultado<T>`, DTOs, validaciones | Dominio |
+| **Infraestructura** | `Infraestructura/CarFix.Infraestructura` | EF Core DB First, repositorios, `UnidadTrabajo`, `ServicioToken`, JWT | Aplicacion + Dominio |
+| **WebApi** | `WebApi/CarFix.WebApi` | Endpoints HTTP, auth JWT, `ManejadorExcepciones`, `Program.cs` | Aplicacion + Infraestructura |
+
+Listo. Resumen de todos los cambios aplicados:
+
+┌────────────────────────┬────────────────────────────────────────┐
+│         Antes          │                 Ahora                  │
+├────────────────────────┼────────────────────────────────────────┤
+│ CarFix.Domain/         │ Dominio/CarFix.Dominio                 │
+├────────────────────────┼────────────────────────────────────────┤
+│ CarFix.Application/    │ Aplicacion/CarFix.Aplicacion           │
+├────────────────────────┼────────────────────────────────────────┤
+│ CarFix.Infrastructure/ │ Infraestructura/CarFix.Infraestructura │
+├────────────────────────┼────────────────────────────────────────┤
+│ CarFix.API/            │ WebApi/CarFix.WebApi                   │
+├────────────────────────┼────────────────────────────────────────┤
+│ DependencyInjection.cs │ InjeccionDependencias.cs               │
+├────────────────────────┼────────────────────────────────────────┤
+│ AddApplication()       │ AgregarAplicacion()                    │
+├────────────────────────┼────────────────────────────────────────┤
+│ AddInfrastructure()    │ AgregarInfraestructura()               │
+└────────────────────────┴────────────────────────────────────────┘
+
+La estructura de carpetas en la guía ahora muestra claramente las 4 carpetas físicas en disco (Dominio/, Aplicacion/, Infraestructura/, WebApi/) con sus proyectos .csproj adentro.
+
+✻ Cooked for 2m 45s
+
+> Cómo se hacen las especificaciones en spec driven development?
+
+Spec Driven Development (SDD) parte de escribir la especificación del comportamiento antes de escribir el código. La especificación es ejecutable — actúa como documentación viva y como suite de pruebas al mismo tiempo.
+
+---
+Formato base: Given / When / Then
+
+Cada especificación describe un escenario de negocio con tres partes:
+
+Feature: Crear orden de reparacion
+
+  Scenario: El mecanico crea una orden para un vehiculo registrado
+    Given que existe un vehiculo con ID 5 registrado en el sistema
+    When el mecanico crea una orden con el problema "Ruido en el motor"
+    Then la orden queda en estado "Recibido"
+    And el total de la orden es 0
+
+  Scenario: No se puede crear una orden sin describir el problema
+    Given que existe un vehiculo con ID 5 registrado en el sistema
+    When el mecanico intenta crear una orden sin descripcion de problema
+    Then el sistema rechaza la solicitud con el mensaje "Debe describir el problema"
+
+---
+El proceso
+
+1. Escribir el Feature (spec legible para negocio y desarrollo)
+        ↓
+2. Ejecutar → falla (no existe código aún)
+        ↓
+3. Implementar el código mínimo para que pase
+        ↓
+4. Refactorizar
+        ↓
+5. Repetir con el siguiente escenario
+
+La diferencia con TDD es el nivel de abstracción: TDD trabaja a nivel de unidad de código; SDD trabaja a nivel de comportamiento de negocio.
+
+---
+En .NET 10 la herramienta es SpecFlow (o Reqnroll)
+
+▎ Nota: SpecFlow fue discontinuado en 2024. Su fork activo y compatible con .NET 10 se llama Reqnroll y es el reemplazo directo.
+
+dotnet add package Reqnroll.NUnit
+dotnet add package Reqnroll.Microsoft.Extensions.DependencyInjection
+
+El archivo .feature (Gherkin) se conecta a clases de pasos en C#:
+
+// CarFix.Especificaciones/Steps/OrdenReparacionSteps.cs
+[Binding]
+public class OrdenReparacionSteps
+{
+    private readonly ISender _sender;
+    private Resultado<int>   _resultado;
+
+    public OrdenReparacionSteps(ISender sender) => _sender = sender;
+
+    [Given(@"que existe un vehiculo con ID (\d+) registrado en el sistema")]
+    public async Task DadoExisteVehiculo(int vehiculoId)
+    {
+        // setup: asegurar que el vehiculo existe en BD de prueba
+    }
+
+    [When(@"el mecanico crea una orden con el problema ""(.*)""")]
+    public async Task CuandoCreaOrden(string problema)
+    {
+        _resultado = await _sender.Send(new CrearOrdenCommand(5, problema));
+    }
+
+    [Then(@"la orden queda en estado ""(.*)""")]
+    public void EntoncesEstado(string estado)
+    {
+        Assert.That(_resultado.EsExitoso, Is.True);
+    }
+
+    [Then(@"el total de la orden es (\d+)")]
+    public void EntoncesTotal(int total)
+    {
+        // verificar total
+    }
+}
+
+---
+Estructura del proyecto de especificaciones
+
+CarFix.sln
+├── Dominio/
+├── Aplicacion/
+├── Infraestructura/
+├── WebApi/
+└── Especificaciones/              ← proyecto de pruebas SDD
+    └── CarFix.Especificaciones/
+        ├── Features/
+        │   ├── OrdenesReparacion.feature
+        │   ├── Clientes.feature
+        │   └── Facturas.feature
+        └── Steps/
+            ├── OrdenReparacionSteps.cs
+            └── ClienteSteps.cs
+
+---
+¿Lo quieres incorporar al proyecto?
+
+Si te interesa, lo agrego a la guía de arquitectura y lo documento como parte del flujo de desarrollo del proyecto. También habría que decidir si las specs cubren solo la capa de Aplicacion (casos de uso) o si llegan hasta el endpoint HTTP (pruebas de integración completas).
+
+✻ Sautéed for 35s
+
+> si
+
+Voy a actualizar la guía de arquitectura para incorporar SDD con Reqnroll, agregar el proyecto Especificaciones/ a la solución y actualizar CLAUDE.md.
+
+  Read 1 file
+
+● Update(.claude\arquitectura_limpia_backend.md)
+Added 210 lines, removed 1 line
+
+---
+
+## 8. Resumen de Capas (Cheat Sheet)
+## 8. Especificaciones — Spec Driven Development (Reqnroll)
+
+Las especificaciones describen el comportamiento del sistema en lenguaje de negocio **antes** de escribir el codigo. Cada spec es un escenario ejecutable que actua como documentacion viva y prueba de aceptacion al mismo
+ tiempo.
+
+> **Herramienta:** Reqnroll (fork activo de SpecFlow, compatible con .NET 10). No usar SpecFlow — fue discontinuado en 2024.
+
+### Proyecto y paquetes
+
+```bash
+# Crear el proyecto de especificaciones dentro de la carpeta Especificaciones/
+dotnet new nunit -n CarFix.Especificaciones -o Especificaciones/CarFix.Especificaciones
+dotnet add Especificaciones/CarFix.Especificaciones package Reqnroll.NUnit
+dotnet add Especificaciones/CarFix.Especificaciones package Reqnroll.Microsoft.Extensions.DependencyInjection
+dotnet add Especificaciones/CarFix.Especificaciones package Microsoft.EntityFrameworkCore.InMemory
+```
+
+### Alcance
+
+Las specs cubren la **capa de Aplicacion** (handlers de MediatR). Prueban las reglas de negocio sin depender del transporte HTTP. La BD se reemplaza por un proveedor en memoria (`UseInMemoryDatabase`) para que las prueb
+as sean rapidas y sin efectos secundarios.
+
+### Convencion de archivos `.feature`
+
+- Un archivo `.feature` por entidad o caso de uso principal
+- Nombre en espannol, sin caracteres especiales: `OrdenesReparacion.feature`
+- Cada `Scenario` describe un caso de negocio completo con datos concretos
+- Usar `Scenario Outline` + `Examples` cuando el mismo flujo cambia solo los datos
+
+### Ejemplo completo — Ordenes de Reparacion
+
+```gherkin
+# Especificaciones/CarFix.Especificaciones/Features/OrdenesReparacion.feature
+Feature: Gestion de ordenes de reparacion
+  Como mecanico
+  Quiero crear y gestionar ordenes de reparacion
+  Para llevar el control del trabajo en el taller
+
+  Background:
+    Given que existe un vehiculo con ID 1 registrado en el sistema
+
+  Scenario: Crear una orden con problema descrito
+    When el mecanico crea una orden para el vehiculo 1 con el problema "Ruido en el motor"
+    Then la orden se crea exitosamente
+    And la orden queda en estado "Recibido"
+
+  Scenario: No se puede crear una orden sin problema
+    When el mecanico intenta crear una orden para el vehiculo 1 sin descripcion
+    Then el sistema rechaza la solicitud con el mensaje "Debe describir el problema"
+
+  Scenario Outline: Cambiar el estado de una orden existente
+    Given que existe una orden con ID <ordenId> en estado "Recibido"
+    When el mecanico cambia el estado de la orden <ordenId> a "<nuevoEstado>"
+    Then la orden <ordenId> queda en estado "<nuevoEstado>"
+
+    Examples:
+      | ordenId | nuevoEstado    |
+      | 1       | En reparacion  |
+      | 2       | Finalizado     |
+```
+
+### Step Definitions
+
+```csharp
+// Especificaciones/CarFix.Especificaciones/Steps/OrdenReparacionSteps.cs
+[Binding]
+public class OrdenReparacionSteps
+{
+    private readonly ISender          _sender;
+    private readonly ICarFixDbContext _contexto;
+    private Resultado<int>            _ultimoResultado;
+    private Resultado                 _ultimoResultadoSimple;
+
+    public OrdenReparacionSteps(ISender sender, ICarFixDbContext contexto)
+    {
+        _sender   = sender;
+        _contexto = contexto;
+    }
+
+    [Given(@"que existe un vehiculo con ID (\d+) registrado en el sistema")]
+    public async Task DadoExisteVehiculo(int vehiculoId)
+    {
+        _contexto.Vehiculos.Add(new Vehiculo
+        {
+            VehiculoID        = vehiculoId,
+            Marca             = "Toyota",
+            EsAutomatico      = false,
+            DetallesCarroceria = "Sedan"
+        });
+        await _contexto.GuardarCambiosAsync();
+    }
+
+    [When(@"el mecanico crea una orden para el vehiculo (\d+) con el problema ""(.*)""")]
+    public async Task CuandoCreaOrden(int vehiculoId, string problema)
+    {
+        _ultimoResultado = await _sender.Send(new CrearOrdenCommand(vehiculoId, problema));
+    }
+
+    [When(@"el mecanico intenta crear una orden para el vehiculo (\d+) sin descripcion")]
+    public async Task CuandoCreaOrdenSinProblema(int vehiculoId)
+    {
+        _ultimoResultado = await _sender.Send(new CrearOrdenCommand(vehiculoId, string.Empty));
+    }
+
+    [Then(@"la orden se crea exitosamente")]
+    public void EntoncesOrdenCreada()
+        => Assert.That(_ultimoResultado.EsExitoso, Is.True);
+
+    [Then(@"la orden queda en estado ""(.*)""")]
+    public async Task EntoncesEstado(string estado)
+    {
+        var orden = await _contexto.OrdenesReparacion
+            .Include(o => o.EstadoOrden)
+            .FirstAsync(o => o.OrdenReparacionID == _ultimoResultado.Valor);
+
+        Assert.That(orden.EstadoOrden.Descripcion, Is.EqualTo(estado));
+    }
+
+    [Then(@"el sistema rechaza la solicitud con el mensaje ""(.*)""")]
+    public void EntoncesRechazo(string mensaje)
+    {
+        Assert.That(_ultimoResultado.EsExitoso, Is.False);
+        Assert.That(_ultimoResultado.Error, Is.EqualTo(mensaje));
+    }
+}
+```
+
+### Configuracion de DI para las especificaciones
+
+```csharp
+// Especificaciones/CarFix.Especificaciones/Soporte/ConfiguracionEspecificaciones.cs
+[Binding]
+public class ConfiguracionEspecificaciones
+{
+    private static IServiceProvider _proveedor;
+
+    [BeforeTestRun]
+    public static void AntesDeTodo()
+    {
+        var servicios = new ServiceCollection();
+
+        // BD en memoria — aislada por cada ejecucion
+        servicios.AddDbContext<CarFixDbContext>(op =>
+            op.UseInMemoryDatabase("CarFixTest"));
+
+        servicios.AddScoped<ICarFixDbContext>(sp => sp.GetRequiredService<CarFixDbContext>());
+        servicios.AddScoped<IUnidadTrabajo, UnidadTrabajo>();
+        servicios.AddScoped<IRepositorioOrdenReparacion, RepositorioOrdenReparacion>();
+        servicios.AddApplication(); // registra MediatR + validadores
+
+        _proveedor = servicios.BuildServiceProvider();
+    }
+
+    [BeforeScenario]
+    public void AntesDeCadaEscenario(IServiceScope scope)
+    {
+        // Cada escenario parte con BD limpia
+        var contexto = scope.ServiceProvider.GetRequiredService<CarFixDbContext>();
+        contexto.Database.EnsureDeleted();
+        contexto.Database.EnsureCreated();
+
+        // Sembrar datos de catalogo basicos
+        contexto.EstadosOrden.AddRange(
+            new EstadoOrden { EstadoOrdenID = 1, Descripcion = "Recibido" },
+            new EstadoOrden { EstadoOrdenID = 2, Descripcion = "En reparacion" },
+            new EstadoOrden { EstadoOrdenID = 3, Descripcion = "Finalizado" }
+        );
+        contexto.SaveChanges();
+    }
+}
+```
+
+### Estructura del proyecto de especificaciones
+
+```text
+Especificaciones/                       ← carpeta fisica en disco
+└── CarFix.Especificaciones.csproj
+    ├── Features/
+    │   ├── OrdenesReparacion.feature
+    │   ├── Clientes.feature
+    │   ├── Repuestos.feature
+    │   └── Facturas.feature
+    ├── Steps/
+    │   ├── OrdenReparacionSteps.cs
+    │   ├── ClienteSteps.cs
+    │   └── FacturaSteps.cs
+    └── Soporte/
+        └── ConfiguracionEspecificaciones.cs
+```
+
+### Flujo de trabajo con SDD
+
+```
+1. Escribir el escenario en el .feature (negocio primero)
+        ↓
+2. Ejecutar → Reqnroll reporta steps sin implementar
+        ↓
+3. Implementar los Step Definitions
+        ↓
+4. Ejecutar → falla (no existe logica aun)
+        ↓
+5. Implementar Command/Query + Handler en Aplicacion
+        ↓
+6. Ejecutar → pasa
+        ↓
+7. Refactorizar y pasar al siguiente escenario
+```
+
+---
+
+## 9. Resumen de Capas (Cheat Sheet)
+
+| Capa | Carpeta / Proyecto | Responsabilidad | Conoce a |
+|---|---|---|---|
+| **Dominio** | `Dominio/CarFix.Dominio` | Interfaces de repositorio, `IUnidadTrabajo`, `IServicioToken`, `ExcepcionDominio` | Nadie |
+| **Aplicacion** | `Aplicacion/CarFix.Aplicacion` | Casos de uso CQRS, `Resultado<T>`, DTOs, validaciones | Dominio |
+| **Infraestructura** | `Infraestructura/CarFix.Infraestructura` | EF Core DB First, repositorios, `UnidadTrabajo`, `ServicioToken`, JWT | Aplicacion + Dominio |
+| **WebApi** | `WebApi/CarFix.WebApi` | Endpoints HTTP, auth JWT, `ManejadorExcepciones`, `Program.cs` | Aplicacion + Infraestructura |
+| **Especificaciones** | `Especificaciones/CarFix.Especificaciones` | Specs ejecutables Gherkin + Reqnroll, BD en memoria | Aplicacion + Infraestructura |
+
+Ahora actualizo la estructura de la solución en la sección 1 y el CLAUDE.md:
+
+● Update(.claude\arquitectura_limpia_backend.md)
+Added 6 lines, removed 5 lines
+
+```text
+CarFix.sln
+├── Dominio/           → CarFix.Dominio          # Interfaces, excepciones y contratos
+├── Aplicacion/        → CarFix.Aplicacion       # Casos de uso (CQRS) — depende solo de Dominio
+├── Infraestructura/   → CarFix.Infraestructura  # EF Core DB First, repositorios, JWT, servicios externos
+└── WebApi/            → CarFix.WebApi           # Endpoints HTTP, autenticacion, configuracion del host
+├── Dominio/            → CarFix.Dominio           # Interfaces, excepciones y contratos
+├── Aplicacion/         → CarFix.Aplicacion        # Casos de uso (CQRS) — depende solo de Dominio
+├── Infraestructura/    → CarFix.Infraestructura   # EF Core DB First, repositorios, JWT, servicios externos
+├── WebApi/             → CarFix.WebApi            # Endpoints HTTP, autenticacion, configuracion del host
+└── Especificaciones/   → CarFix.Especificaciones  # Specs ejecutables Gherkin con Reqnroll
+```
+
+**Regla de oro:** Dominio no conoce a nadie. Aplicacion no conoce a Infraestructura ni a WebApi. Infraestructura no conoce a WebApi.
+**Regla de oro:** Dominio no conoce a nadie. Aplicacion no conoce a Infraestructura ni a WebApi. Infraestructura no conoce a WebApi. Especificaciones conoce a Aplicacion e Infraestructura (solo para pruebas).
+
+---
+
+
+● Update(CLAUDE.md)
+Added 1 line, removed 1 line
+
+## 8. Backend ASP.NET Core
+
+El backend se desarrollará con **ASP.NET Core Web API, .NET 10, C#** siguiendo Arquitectura Limpia (Clean Architecture). Al escribir cualquier código backend, seguir obligatoriamente los patrones de esta guía:
+El backend se desarrollará con **ASP.NET Core Web API, .NET 10, C#** siguiendo Arquitectura Limpia (Clean Architecture) con 5 proyectos: `Dominio`, `Aplicacion`, `Infraestructura`, `WebApi` y `Especificaciones`. Al escr
+ibir cualquier código backend, seguir obligatoriamente los patrones de esta guía:
+
+@.claude/arquitectura_limpia_backend.md
+
+
+Listo. Lo que se incorporó:
+
+Proyecto Especificaciones/CarFix.Especificaciones:
+- Herramienta: Reqnroll (reemplazo activo de SpecFlow para .NET 10)
+- BD en memoria (UseInMemoryDatabase) — cada escenario arranca con base limpia
+- Los datos de catálogo (EstadoOrden, etc.) se siembran antes de cada escenario en ConfiguracionEspecificaciones
+
+Estructura de una spec:
+- Features/ — archivos .feature en Gherkin, uno por entidad principal
+- Steps/ — implementación C# de los pasos Given/When/Then
+- Soporte/ — configuración de DI y hooks de Reqnroll ([BeforeTestRun], [BeforeScenario])
+
+Flujo de trabajo:
+.feature (negocio) → steps sin impl → lógica en Application → spec pasa → siguiente escenario
+
+Las specs cubren la capa de Aplicacion (handlers de MediatR), no el HTTP, para mantenerlas rápidas y enfocadas en reglas de negocio.
+
+✻ Cooked for 1m 27s
+
+> los archivos que están fuera de la carpeta .claude o sea el claude.md pendientes.md y database_documentation no deberían estar dentro de la carpeta .claude?
+
+Buena pregunta. La respuesta es parcial:
+
+CLAUDE.md debe quedarse en la raíz — Claude Code lo busca específicamente ahí (y en raíces de subdirectorios). Si lo mueve dentro de .claude/, deja de cargarse automáticamente. Eso no se puede cambiar, es una convención del sistema.
+
+PENDIENTES.md y DATABASE_DOCUMENTATION.md sí pueden moverse a .claude/ — son documentos de soporte para el desarrollo, no código de la aplicación. Si los movemos hay que:
+1. Actualizar las referencias en CLAUDE.md (los links y el @ import de DATABASE_DOCUMENTATION)
+2. Actualizar el skill sync-db-docs para que escriba en la nueva ruta
+
+¿Los movemos?
+
+✻ Sautéed for 24s
+
+> si
+
+Voy a leer ambos archivos, escribirlos en .claude/ y actualizar todas las referencias en paralelo.
+
+  Read 2 files
+
+Muevo los dos archivos con PowerShell y actualizo las referencias en paralelo.
+
+  Ran 1 shell command
+
+Ahora actualizo CLAUDE.md y el skill en paralelo:
+
+  Read 1 file
+
+Ahora actualizo todas las referencias en CLAUDE.md y el skill en paralelo:
+
+● Update(CLAUDE.md)
+Added 3 lines, removed 3 lines
+
+## 1. Estado del Proyecto
+
+Este repositorio está en fase de **diseño/planificación**. No existe código de aplicación aún — solo documentación de base de datos y especificaciones de negocio. Los pendientes de BD y de desarrollo están en [`PENDIENTE
+S.md`](PENDIENTES.md).
+Este repositorio está en fase de **diseño/planificación**. No existe código de aplicación aún — solo documentación de base de datos y especificaciones de negocio. Los pendientes de BD y de desarrollo están en [`PENDIENTE
+S.md`](.claude/PENDIENTES.md).
+
+## 2. Descripción del Proyecto
+
+
+| Facturas: Cambiar estado a Pagada    | ✓   | ✓   | ✓   |
+| Catálogo: Registrar y modificar montos | ✓  | ✓   |     |
+
+> **Pendiente en BD:** No existen tablas de `Usuarios` ni `Roles`. Ver [`PENDIENTES.md`](PENDIENTES.md).
+> **Pendiente en BD:** No existen tablas de `Usuarios` ni `Roles`. Ver [`PENDIENTES.md`](.claude/PENDIENTES.md).
+
+## 4. Estructura de la Factura
+
+
+
+La configuración del taller (nombre, dirección, teléfonos, email) vive en un archivo de configuración del backend.
+
+> **Pendiente en BD:** `Facturas` requiere campos `Impuesto` y `OrdenReparacionID` (FK). Ver [`PENDIENTES.md`](PENDIENTES.md).
+> **Pendiente en BD:** `Facturas` requiere campos `Impuesto` y `OrdenReparacionID` (FK). Ver [`PENDIENTES.md`](.claude/PENDIENTES.md).
+
+## 5. Base de Datos
+
+
+● Update(.claude\skills\sync-db-docs\SKILL.md)
+Added 2 lines, removed 2 lines
+# sync-db-docs
+
+Conecta a la base de datos CAR_FIX en `localhost\SQL2022` y regenera `DATABASE_DOCUMENTATION.md` con el esquema actual.
+Conecta a la base de datos CAR_FIX en `localhost\SQL2022` y regenera `.claude/DATABASE_DOCUMENTATION.md` con el esquema actual.
+
+## Pasos
+
+
+
+### 2. Actualizar el documento
+
+Esta skill **solo reemplaza** las siguientes dos secciones de `DATABASE_DOCUMENTATION.md`. El resto del documento (encabezado, descripción general, flujo de negocio, observaciones, resumen) se mantiene intacto tal como
+está.
+Esta skill **solo reemplaza** las siguientes dos secciones de `.claude/DATABASE_DOCUMENTATION.md`. El resto del documento (encabezado, descripción general, flujo de negocio, observaciones, resumen) se mantiene intacto t
+al como está.
+
+#### Sección 1 — `## Diagrama de Relaciones (ERD)`
+
+
+● Update(CLAUDE.md)
+Added 1 line, removed 1 line
+- **Servidor:** `localhost\SQL2022`
+- **Base de datos:** `CAR_FIX`
+- **Conexión:** `Server=localhost\SQL2022;Database=CAR_FIX;Integrated Security=True;TrustServerCertificate=True`
+- **Esquema completo:** [`DATABASE_DOCUMENTATION.md`](DATABASE_DOCUMENTATION.md)
+- **Esquema completo:** [`DATABASE_DOCUMENTATION.md`](.claude/DATABASE_DOCUMENTATION.md)
+
+### Tablas principales
+
+1 skill available
+
+Ahora actualizo la sección de comandos y la estructura del proyecto en CLAUDE.md:
+
+● Update(CLAUDE.md)
+Added 1 line, removed 1 line
+
+| Comando | Descripción |
+|---------|-------------|
+| `/sync-db-docs` | Conecta a `CAR_FIX` y regenera `DATABASE_DOCUMENTATION.md` con el esquema actual. Usar después de cualquier cambio en la BD. |
+| `/sync-db-docs` | Conecta a `CAR_FIX` y regenera `.claude/DATABASE_DOCUMENTATION.md` con el esquema actual. Usar después de cualquier cambio en la BD. |
+
+## 7. Frontend Angular
+
+
+● Update(CLAUDE.md)
+Added 6 lines, removed 6 lines
+
+```
+AppCarFix/
+├── CLAUDE.md                    # Este archivo
+├── DATABASE_DOCUMENTATION.md   # Esquema completo de BD (generado por /sync-db-docs)
+├── PENDIENTES.md               # Lista de pendientes (BD + desarrollo)
+├── CLAUDE.md                    # Este archivo (debe estar en la raiz)
+└── .claude/
+    ├── settings.json
+    ├── angular_buenas_practicas.md      # Guía de buenas prácticas Angular 21
+    ├── arquitectura_limpia_backend.md   # Guía de Arquitectura Limpia ASP.NET Core
+    ├── PENDIENTES.md                    # Lista de pendientes (BD + desarrollo)
+    ├── DATABASE_DOCUMENTATION.md        # Esquema completo de BD (generado por /sync-db-docs)
+    ├── angular_buenas_practicas.md      # Guia de buenas practicas Angular 21
+    ├── arquitectura_limpia_backend.md   # Guia de Arquitectura Limpia ASP.NET Core
+    └── skills/
+        └── sync-db-docs/
+            └── SKILL.md        # Skill: regenerar documentación de BD
+            └── SKILL.md        # Skill: regenerar documentacion de BD
+```
+
+Verifico que los archivos quedaron en el lugar correcto y ya no están en la raíz:
+
+  Ran 1 shell command
+
+Perfecto. La raíz del proyecto quedó limpia — solo CLAUDE.md (que debe estar ahí obligatoriamente). Todo lo demás está en .claude/:
+
+AppCarFix/
+├── CLAUDE.md                          ← único archivo en la raíz
+└── .claude/
+    ├── settings.json
+    ├── PENDIENTES.md
+    ├── DATABASE_DOCUMENTATION.md
+    ├── angular_buenas_practicas.md
+    ├── arquitectura_limpia_backend.md
+    └── skills/
+        └── sync-db-docs/
+            └── SKILL.md
+
+Los tres cambios funcionales que se actualizaron: los links en CLAUDE.md apuntan a .claude/PENDIENTES.md y .claude/DATABASE_DOCUMENTATION.md, y el skill sync-db-docs ahora escribe en .claude/DATABASE_DOCUMENTATION.md.
+
+✻ Baked for 1m 4s
+
+> entonces el archivo CLAUDE.MD por convención quedara al mismo nivel de los proyectos cuando se creen?
+
+Sí, exactamente. Cuando se cree la solución quedará así:
+
+AppCarFix/
+├── CarFix.sln
+├── CLAUDE.md                ← al mismo nivel que el .sln y las carpetas de proyectos
+├── .claude/
+│   ├── PENDIENTES.md
+│   ├── DATABASE_DOCUMENTATION.md
+│   └── ...
+├── Dominio/
+│   └── CarFix.Dominio/
+├── Aplicacion/
+│   └── CarFix.Aplicacion/
+├── Infraestructura/
+│   └── CarFix.Infraestructura/
+├── WebApi/
+│   └── CarFix.WebApi/
+└── Especificaciones/
+    └── CarFix.Especificaciones/
+
+CLAUDE.md queda en la raíz del repositorio, al mismo nivel que el .sln. Esa es la ubicación correcta — Claude Code lo busca ahí automáticamente cada vez que se abre una conversación en ese directorio.
+
+✻ Crunched for 13s
+
+> Correcto eso entendi al mismo nivel del SLN
+
+Exacto, todo claro. Cuando creen la solución en Visual Studio o con dotnet new sln, el CLAUDE.md ya está esperando en el lugar correcto.
+
+✻ Churned for 3s
+
+> y el proyecto de angular dónde quedaría?
+
+Buena pregunta. Hay dos opciones comunes:
+
+Opción A — Todo en el mismo nivel (monorepo plano)
+AppCarFix/
+├── CarFix.sln
+├── CLAUDE.md
+├── .claude/
+├── Dominio/
+├── Aplicacion/
+├── Infraestructura/
+├── WebApi/
+├── Especificaciones/
+└── Frontend/              ← carpeta del proyecto Angular
+    └── car-fix-app/       ← generado con ng new
+
+Opción B — Separar backend y frontend en subcarpetas
+AppCarFix/
+├── CLAUDE.md
+├── .claude/
+├── Backend/               ← todo el .NET aquí
+│   ├── CarFix.sln
+│   ├── Dominio/
+│   ├── Aplicacion/
+│   ├── Infraestructura/
+│   ├── WebApi/
+│   └── Especificaciones/
+└── Frontend/              ← Angular aquí
+    └── car-fix-app/
+
+La Opción B es más ordenada cuando el proyecto crece, porque separa claramente los dos mundos. La Opción A es más simple al inicio pero mezcla el .sln con la carpeta de Angular en el mismo nivel.
+
+¿Cuál prefiere?
+
+✻ Cooked for 13s
+
+> me gusta la opcion b, la podemos definir en alguno de los archivos que ya tenemos
+
+La sección 9 de CLAUDE.md es el lugar ideal — es la que define la estructura del proyecto.
+
+● Update(CLAUDE.md)
+Added 26 lines, removed 10 lines
+
+```
+AppCarFix/
+├── CLAUDE.md                    # Este archivo (debe estar en la raiz)
+└── .claude/
+    ├── settings.json
+    ├── PENDIENTES.md                    # Lista de pendientes (BD + desarrollo)
+    ├── DATABASE_DOCUMENTATION.md        # Esquema completo de BD (generado por /sync-db-docs)
+    ├── angular_buenas_practicas.md      # Guia de buenas practicas Angular 21
+    ├── arquitectura_limpia_backend.md   # Guia de Arquitectura Limpia ASP.NET Core
+    └── skills/
+        └── sync-db-docs/
+            └── SKILL.md        # Skill: regenerar documentacion de BD
+├── CLAUDE.md                            # Este archivo (raiz del repositorio)
+├── .claude/
+│   ├── settings.json
+│   ├── PENDIENTES.md                    # Lista de pendientes (BD + desarrollo)
+│   ├── DATABASE_DOCUMENTATION.md        # Esquema completo de BD (generado por /sync-db-docs)
+│   ├── angular_buenas_practicas.md      # Guia de buenas practicas Angular 21
+│   ├── arquitectura_limpia_backend.md   # Guia de Arquitectura Limpia ASP.NET Core
+│   └── skills/
+│       └── sync-db-docs/
+│           └── SKILL.md
+│
+├── Backend/                             # Solucion .NET
+│   ├── CarFix.sln
+│   ├── Dominio/
+│   │   └── CarFix.Dominio/
+│   ├── Aplicacion/
+│   │   └── CarFix.Aplicacion/
+│   ├── Infraestructura/
+│   │   └── CarFix.Infraestructura/
+│   ├── WebApi/
+│   │   └── CarFix.WebApi/
+│   └── Especificaciones/
+│       └── CarFix.Especificaciones/
+│
+└── Frontend/                            # Proyecto Angular 21
+    └── car-fix-app/                     # Generado con: ng new car-fix-app
+```
+
+Listo. La estructura quedó definida en CLAUDE.md. Cuando llegue el momento de crear el proyecto:
+
+- cd Backend && dotnet new sln -n CarFix para el backend
+- cd Frontend && ng new car-fix-app para el frontend
+
+✻ Crunched for 18s
+
+> por hoy terminamos
+
+Perfecto, buen trabajo hoy. Se avanzó bastante en la definición del proyecto:
+
+- Esquema de BD actualizado con los cambios que hiciste
+- Guías de Angular 21 y Arquitectura Limpia (.NET 10) integradas en el proyecto
+- Estructura de la solución definida: 5 proyectos backend + Angular en carpetas separadas
+- JWT, EF Database First, Reqnroll y SDD incorporados a los patrones
+- Archivos de soporte organizados dentro de .claude/
+
+Hasta la próxima.
+
+✻ Baked for 6s
+
+> Es posible guardar todo esta conversacion en un archivo en la raíz del proyecto en una carpeta llamada PROMPTS
+
+No puedo exportar el chat verbatim (los mensajes exactos tal como aparecen en la pantalla), eso está fuera de mis capacidades. Lo que sí puedo hacer es crear un archivo en PROMPTS/ con un resumen detallado de la sesión: decisiones tomadas, archivos creados/modificados y el razonamiento detrás de cada cambio.
+
+¿Le sirve así, o prefiere copiar manualmente el chat desde la interfaz?
+
+✻ Churned for 16s
+
+> si, créelo así
+
+  Ran 1 shell command
+
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────── 1 new message ───────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+● Write(PROMPTS\sesion_2026-06-26.md)
+
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Create file
+ PROMPTS\sesion_2026-06-26.md
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+# Sesion de Trabajo — 2026-06-26
+
+Proyecto: CAR_FIX — Sistema de Reparacion de Vehiculos
+Participantes: Usuario (Pablo Alvarez) + Claude Code (claude-sonnet-4-6)
+
+---
+
+## 1. Actualizacion del Esquema de Base de Datos
+
+### Accion
+Se ejecuto el skill `/sync-db-docs` para regenerar `DATABASE_DOCUMENTATION.md` con los cambios que el usuario habia realizado directamente en SQL Server.
+
+### Cambios detectados en la BD
+El esquema cambio significativamente respecto a la version anterior:
+
+**`OrdenReparacion`**
+- Eliminado: columna `Total` (el total ahora vive en `Facturas`)
+- Renombrado: `Garantia` → `EsGarantia` (consistente con `EsEmpresa`, `EsAutomatico`)
+- Agregado: `FacturaID int NOT NULL` (FK hacia `Facturas`)
+
+**`Reparacion`**
+- Cambiado: `OrdenReparacionID` → `FacturaID` (ahora FK con CASCADE hacia `Facturas`)
+
+**`Repuesto`**
+- Cambiado: `OrdenReparacionID` → `FacturaID` (ahora FK con CASCADE hacia `Facturas`)
+
+**`Facturas`**
+- Agregado: `OrdenReparacionID int NOT NULL` (FK logica)
+- Agregado: `Adelanto money NOT NULL DEFAULT ((0))`
+- Agregado: `ImpuestoVentas money NOT NULL DEFAULT ((0))`
+- Agregado: `EsProforma bit NOT NULL DEFAULT ((0))`
+- Eliminado: `RepuestoID` y `ReparacionID`
+- `ClienteID` y `EstadoFacturaID` ahora tienen FK constraint enforced
+
+**`TipoReparacion`**
+- Renombrado: `DuracionAproximada` → `DuracionAproximadaHoras`
+
+**Nueva tabla `Taller`** (ya estaba en la sesion anterior, se confirmo)
+
+### Cambio arquitectonico
+`Reparacion` y `Repuesto` ahora enlazan directamente a `Facturas` (no a `OrdenReparacion`). Existe referencia circular: `Facturas.OrdenReparacionID` ↔ `OrdenReparacion.FacturaID`.
+
+### Archivos modificados
+- `.claude/DATABASE_DOCUMENTATION.md` — secciones ERD y Tablas regeneradas
+
+---
+
+## 2. Guia de Buenas Practicas Angular 21
+
+### Accion
+El usuario tenia un archivo `Angular_Buenas_Practicas.md` en la raiz del proyecto. Se analizo su contenido, se limpio (tenia artefactos de formato) y se ubico correctamente.
+
+### Decisiones
+- Archivo limpio guardado en: `.claude/angular_buenas_practicas.md`
+- Archivo original eliminado de la raiz
+- Importado en `CLAUDE.md` con `@.claude/angular_buenas_practicas.md` para carga automatica
+
+### Contenido de la guia (resumen)
+Patrones obligatorios para Angular 21:
+- Componentes `standalone: true` (no NgModule)
+- Signals: `signal()`, `computed()`, `effect()`
+- Control de flujo: `@if`, `@for`, `@switch` (no `*ngIf`, `*ngFor`)
+- Inputs/Outputs: `input()`, `output()`, `model()` (no decoradores `@Input/@Output`)
+- Inyeccion de dependencias: `inject()` (no constructor injection)
+- Configuracion: `provideRouter()`, `provideHttpClient()` (no modulos)
+- Lazy loading: `loadComponent()` por componente standalone
+- `@defer` para carga diferida en plantillas
+
+---
+
+## 3. Guia de Arquitectura Limpia — Backend ASP.NET Core
+
+### Stack confirmado por el usuario
+- **Framework:** ASP.NET Core Web API
+- **Version:** .NET 10
+- **Lenguaje:** C#
+- **ORM:** Entity Framework Core — **Database First**
+- **Autenticacion:** JSON Web Token (JWT)
+- **Pruebas:** Spec Driven Development con Reqnroll
+
+### Archivo creado
+`.claude/arquitectura_limpia_backend.md`
+
+### Decisiones de arquitectura tomadas en esta sesion
+
+#### Estructura de la solucion (5 proyectos en 5 carpetas fisicas)
+```
+Backend/
+├── CarFix.sln
+├── Dominio/           → CarFix.Dominio
+├── Aplicacion/        → CarFix.Aplicacion
+├── Infraestructura/   → CarFix.Infraestructura
+├── WebApi/            → CarFix.WebApi
+└── Especificaciones/  → CarFix.Especificaciones
+```
+
+#### Patrones incluidos
+- **Clean Architecture**: dependencias unidireccionales hacia adentro
+- **CQRS con MediatR**: Commands (escritura) / Queries (lectura directa al DbContext)
+- **Patron Resultado**: `Resultado<T>` con `EsExitoso`, `Valor`, `Error`, `Exito()`, `Fallo()`
+- **Unidad de Trabajo**: `IUnidadTrabajo` / `UnidadTrabajo` con `GuardarCambiosAsync()`
+- **Inversion de Control**: capas internas definen interfaces, Infrastructure implementa
+- **Inyeccion de Dependencias**: cada capa tiene `InjeccionDependencias.cs`
+- **Repositorios especificos**: metodos con nombres de dominio en espannol
+- **Validacion automatica**: `ComportamientoValidacion` pipeline de MediatR + FluentValidation
+
+#### Entity Framework Database First
+- Entidades generadas con `dotnet ef dbcontext scaffold`
+- Archivos generados en `Infraestructura/Persistencia/Generado/` — nunca editar
+- Comportamiento de dominio agregado via clases parciales en `Infraestructura/Persistencia/Extensiones/`
+- Nombres de entidades y propiedades identicos a los de la BD
+
+#### JWT
+- Paquete: `Microsoft.AspNetCore.Authentication.JwtBearer`
+- `ServicioToken` en `Infraestructura/Seguridad/`
+- Todos los endpoints protegidos con `.RequireAuthorization()`
+- Unico endpoint publico: `POST /api/autenticacion/iniciar-sesion`
+- Llave secreta nunca en repositorio — usar `dotnet user-secrets`
+
+#### .NET 10 — APIs especificas
+- `TypedResults` (no `Results`) para inferencia de tipos en OpenAPI
+- `IExceptionHandler` + `AddExceptionHandler<ManejadorExcepciones>()`
+- `AddOpenApi()` + `MapOpenApi()` — sin Swashbuckle
+- `AddProblemDetails()` nativo
+
+#### Spec Driven Development con Reqnroll
+- Proyecto `Especificaciones/CarFix.Especificaciones`
+- Herramienta: Reqnroll (reemplazo activo de SpecFlow para .NET 10)
+- Specs cubren la capa de Aplicacion (handlers de MediatR)
+- BD en memoria (`UseInMemoryDatabase`) — cada escenario parte limpio
+- Formato Gherkin: `Feature` / `Background` / `Scenario` / `Scenario Outline`
+- Flujo: escribir `.feature` → implementar steps → implementar handler → spec pasa
+
+---
+
+## 4. Convenciones de Nomenclatura
+
+### Decision
+Todo el codigo se escribe en **espannol sin caracteres especiales**.
+
+### Reglas
+- Sin nn: `annio` (año), `espannol` (español)
+- Nombres de entidades/propiedades identicos a los de las tablas/columnas de la BD
+- Sufijos tecnicos en ingles permitidos: `Handler`, `Repository`, `Validator`, `Command`, `Query`, `Dto`, `Exception`
+- Metodos de dominio en espannol: `ObtenerPorIdAsync`, `AgregarAsync`, `Actualizar`, `GuardarCambiosAsync`
+- Archivos de DI: `InjeccionDependencias.cs`
+- Metodos de extension DI: `AgregarAplicacion()`, `AgregarInfraestructura()`
+
+---
+
+## 5. Organizacion de Archivos del Proyecto
+
+### Decision
+- `CLAUDE.md` debe quedarse en la raiz del repositorio (convencion de Claude Code, no se puede mover)
+- `PENDIENTES.md` y `DATABASE_DOCUMENTATION.md` movidos a `.claude/`
+- Todas las referencias en `CLAUDE.md` y el skill `sync-db-docs` actualizadas
+
+### Estructura final de `.claude/`
+```
+.claude/
+├── settings.json
+├── PENDIENTES.md
+├── DATABASE_DOCUMENTATION.md
+├── angular_buenas_practicas.md
+├── arquitectura_limpia_backend.md
+└── skills/
+    └── sync-db-docs/
+        └── SKILL.md
+```
+
+---
+
+## 6. Estructura General del Repositorio (definida)
+
+```
+AppCarFix/
+├── CLAUDE.md
+├── .claude/
+│   └── (archivos de soporte Claude)
+├── Backend/
+│   ├── CarFix.sln
+│   ├── Dominio/
+│   ├── Aplicacion/
+│   ├── Infraestructura/
+│   ├── WebApi/
+│   └── Especificaciones/
+├── Frontend/
+│   └── car-fix-app/     (ng new car-fix-app)
+└── PROMPTS/
+    └── sesion_2026-06-26.md
+```
+
+---
+
+## 7. Pendientes al Cierre de la Sesion
+
+Ver `.claude/PENDIENTES.md` para la lista completa. Items principales:
+- Crear tabla `Usuarios` y tabla `Roles` en la BD
+- Agregar FK constraint `Reparacion.TipoReparacionID` → `TipoReparacion.CatalogoCostoID`
+- Corregir typo `EstadoFactura.Descipcion` → `Descripcion`
+- Evaluar `Vehiculos.Annio` de `tinyint` a `smallint`
+- Renombrar `TipoReparacion.CatalogoCostoID` → `TipoReparacionID`
+- Agregar campo `Cantidad` en `Repuesto`
+
+---
+
+## 8. Proximos Pasos de Desarrollo
+
+1. Crear la solucion .NET en `Backend/` con los 5 proyectos
+2. Ejecutar el scaffold de EF Core desde la BD existente
+3. Crear el proyecto Angular en `Frontend/` con `ng new car-fix-app`
+4. Implementar autenticacion JWT (requiere tablas `Usuarios` y `Roles` primero)
+5. Comenzar por los casos de uso prioritarios siguiendo el flujo de negocio:
+   - Registro de clientes y vehiculos
+   - Creacion de ordenes de reparacion
+   - Asociacion de reparaciones y repuestos
+   - Generacion de facturas

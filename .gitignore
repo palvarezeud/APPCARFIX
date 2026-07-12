@@ -1,0 +1,22 @@
+# Credenciales de despliegue — NUNCA subir esto
+appCarFix.PublishSettings
+*.PublishSettings
+
+# Certificados de desarrollo autofirmados (se regeneran con la skill arrancar-app)
+dev-certs/
+
+# .NET
+Backend/**/bin/
+Backend/**/obj/
+Backend/**/logs/
+*.user
+.vs/
+
+# Angular (Frontend/car-fix-app ya tiene su propio .gitignore mas especifico)
+node_modules/
+dist/
+
+# Sistema operativo / editores
+.DS_Store
+Thumbs.db
+.idea/
