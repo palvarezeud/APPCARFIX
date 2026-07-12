@@ -71,6 +71,7 @@ try
     app.UseAuthentication();
     app.UseAuthorization();
 
+    app.MapearSalud();
     app.MapearAutenticacion();
     app.MapearClientes();
     app.MapearVehiculos();
