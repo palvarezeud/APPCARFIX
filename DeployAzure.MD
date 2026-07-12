@@ -1,8 +1,8 @@
-# Despliegue y prueba del backend CAR_FIX en Azure App Service
+# Despliegue de CAR_FIX en Azure (backend + frontend)
 
-Runbook para publicar el backend (`CarFix.WebApi`) en el App Service ya existente y probarlo desde
-un Angular corriendo en `localhost`. No documenta la creación de infraestructura desde cero — esa
-infraestructura ya existe (ver abajo).
+Runbook para publicar el backend (`CarFix.WebApi`) en Azure App Service y el frontend
+(`car-fix-app`) en Azure Static Web Apps, ambos ya existentes — no documenta la creación de
+infraestructura desde cero salvo donde se indica explícitamente.
 
 ## Infraestructura existente
 
@@ -10,11 +10,29 @@ infraestructura ya existe (ver abajo).
 |---|---|
 | Subscription | `238f43d1-4e1d-4bbd-9760-e895f64ce26a` |
 | Resource Group | `appCarFixRG` |
-| App Service | `appCarFix` |
-| URL pública | `https://appcarfix-hdeyb4dncbdwbchg.canadaeast-01.azurewebsites.net` |
+| App Service (backend) | `appCarFix` |
+| URL pública backend | `https://appcarfix-hdeyb4dncbdwbchg.canadaeast-01.azurewebsites.net` |
+| Static Web App (frontend) | `appCarFixWeb` (región `East US 2` — Static Web Apps no está disponible en Canada East/Central) |
+| URL pública frontend | `https://icy-wave-040fef60f.7.azurestaticapps.net` |
+| Repositorio GitHub | `https://github.com/palvarezeud/APPCARFIX` (privado), rama `master` |
 | Azure SQL Server | `appcarfixinstance.database.windows.net` |
 | Azure SQL Database | `appcarfixdb` |
 | SQL Auth — usuario | `appcarfixuser` |
+
+### Azure CLI y la política de MFA step-up del tenant
+
+Se instaló Azure CLI (`winget install Microsoft.AzureCLI`) para poder diagnosticar y crear recursos
+por terminal. Funciona bien para **operaciones de lectura** (`az account show`, `az webapp show`,
+`az staticwebapp show`, etc.) con un login interactivo normal (`az login --tenant <tenant-id>`).
+
+**Pero el tenant (UNED) exige MFA "step-up" (Conditional Access, authentication context `p1`) para
+cualquier operación de escritura** (`az staticwebapp create`, `az webapp cors add`, etc.). El CLI
+falla consistentemente con `AADSTS50076: ... you must use multi-factor authentication ...` incluso
+después de reintentar `az login` limpio (logout + borrar cache de MSAL + login de nuevo) — el
+device-code/browser flow del CLI no logra satisfacer ese desafío de step-up en este tenant. La
+única vía que funcionó para operaciones de escritura fue el **Portal de Azure** (ahí el step-up se
+resuelve nativamente en el navegador). Lectura por CLI + escritura por Portal es el patrón a seguir
+mientras esto no cambie.
 
 Perfiles de publicación disponibles en `Backend/WebApi/CarFix.WebApi/Properties/PublishProfiles/`:
 `appCarFix - Web Deploy.pubxml`, `appCarFix - Zip Deploy.pubxml`, `appCarFix - FTP.pubxml`,
@@ -37,14 +55,32 @@ para secretos en desarrollo, igual que documenta el `CLAUDE.md` del repo.
   funciona sin configuración adicional. Verificar en la prueba final que no haya bucles de
   redirección.
 
-### 2. CORS
-- `Program.cs` ya incluye `http://localhost:4200` en la política `WithOrigins(...)`, junto con los
-  orígenes por IP que gestiona la skill `arrancar-app` para pruebas desde celular. No hace falta
-  agregar nada para probar desde Angular local.
-- El App Service puede estar corriendo una versión más vieja del código (con otra lista de
-  orígenes) — **hay que republicar** para que la política CORS vigente en Azure coincida con la de
-  `Program.cs`.
-- Mejora pendiente (no bloqueante): la lista de orígenes está hardcodeada en C#. Cada vez que
+### 2. CORS — hay DOS capas distintas, no una sola
+
+**Esto es lo que más tiempo hizo perder al desplegar el frontend — leer con cuidado.**
+
+Azure App Service tiene un **CORS de plataforma** (Portal → `appCarFix` → busclar "CORS" en el menú,
+bajo la sección API), completamente separado del CORS que implementa el código en `Program.cs`
+(`AddCors` + `WithOrigins(...)`). Las dos listas son independientes y **las dos tienen que incluir
+el origen** para que un browser pueda llamar a la API:
+
+- **CORS de plataforma** (Portal, sin tocar código, aplica al instante sin redeploy ni restart) —
+  ya traía cargado `http://localhost:4200` de una configuración anterior. Cualquier origen nuevo
+  (como el del Static Web App) hay que agregarlo ahí manualmente. `az webapp cors add` existe pero
+  choca con la limitación de MFA step-up de la sección anterior — hacerlo desde el Portal.
+- **CORS de código** (`Program.cs`, `WithOrigins(...)`) — requiere editar, commitear y **republicar**
+  el backend para que tome efecto.
+
+Síntoma si falta el de plataforma: el preflight OPTIONS devuelve `400 The origin '...' is not
+allowed` **incluso después de confirmar que el DLL desplegado ya tiene el origen correcto en el
+código y de reiniciar el App Service** — porque el filtro de plataforma actúa antes de que la
+petición llegue al código de la app. Si un origen nuevo sigue rechazado después de republicar y
+reiniciar, revisar el CORS de plataforma antes de seguir buscando en otro lado.
+
+- `Program.cs` ya incluye `http://localhost:4200` y los orígenes por IP que gestiona la skill
+  `arrancar-app` para pruebas desde celular, más el origen del Static Web App
+  (`https://icy-wave-040fef60f.7.azurestaticapps.net`).
+- Mejora pendiente (no bloqueante): la lista en `Program.cs` está hardcodeada en C#. Cada vez que
   cambia la IP Wi-Fi (la skill `arrancar-app` la reescribe) habría que recompilar y republicar en
   Azure para que un celular la use contra la nube. Si ese flujo se vuelve habitual, mover
   `Cors:OrigenesPermitidos` a configuración en vez de código.
@@ -91,6 +127,73 @@ Server=tcp:appcarfixinstance.database.windows.net,1433;Initial Catalog=appcarfix
   ```
 - La contraseña actual del usuario `appcarfixuser` (`Linux01.`) es débil/predecible — conviene
   rotarla en algún momento; no bloquea el uso actual.
+
+## Frontend — Azure Static Web Apps
+
+### Preparación del repositorio (una sola vez)
+
+El proyecto no estaba en git al momento de este despliegue. Antes de subirlo a GitHub:
+
+1. **Sanear secretos de `appsettings.json`** — tenía la contraseña SMTP real y la llave JWT en texto
+   plano. Se copiaron a `dotnet user-secrets` del proyecto (`dotnet user-secrets set "Jwt:Llave" "..."
+   --project Backend/WebApi/CarFix.WebApi`, ídem `Smtp:Contrasenna`) y se reemplazaron por `""` en el
+   archivo antes del primer commit. El backend local sigue funcionando igual porque `user-secrets`
+   tiene prioridad sobre `appsettings.json` en `Development`.
+2. **`.gitignore` en la raíz** excluyendo `appCarFix.PublishSettings` (tiene la contraseña de
+   despliegue MSDeploy — nunca debe llegar al repo), `dev-certs/` (llave privada autofirmada), y los
+   `bin/`/`obj/`/`node_modules/` habituales.
+3. `git init` → commit inicial → repo **privado** en GitHub (`palvarezeud/APPCARFIX`) → push.
+
+### Build output de Angular — un detalle que rompe el deploy si se adivina mal
+
+Angular 21 (`@angular/build:application`) anida la salida bajo `/browser` **aunque no haya SSR**:
+
+```
+Frontend/car-fix-app/dist/car-fix-app/browser/index.html   ← esto es lo que hay que servir
+Frontend/car-fix-app/dist/car-fix-app/browser/main-*.js
+Frontend/car-fix-app/dist/car-fix-app/browser/...
+```
+
+Confirmado corriendo `npx ng build` localmente e inspeccionando `dist/`. El `output_location` de
+Static Web Apps tiene que apuntar a `dist/car-fix-app/browser`, no a `dist/car-fix-app`.
+
+### Creación del recurso — Portal (no CLI, ver limitación de MFA arriba)
+
+`az staticwebapp create` falla con el mismo error de MFA step-up que cualquier operación de
+escritura en este tenant. Se creó desde **Portal → Create a resource → Static Web Apps**:
+
+| Campo | Valor |
+|---|---|
+| Resource Group | `appCarFixRG` |
+| Name | `appCarFixWeb` |
+| Plan type | Free |
+| Region | `East US 2` (Static Web Apps no está disponible en Canada East/Central) |
+| Source | GitHub → `palvarezeud` / `APPCARFIX` / rama `master` |
+| App location | `/Frontend/car-fix-app` |
+| Api location | *(vacío — no hay Azure Functions, el API es el App Service aparte)* |
+| Output location | `dist/car-fix-app/browser` |
+
+El wizard del Portal **autogeneró mal** `app_location` y `output_location` la primera vez (quedaron
+con valores de una plantilla genérica no relacionada al proyecto, tipo `dist/algo-random`) en el
+archivo `.github/workflows/azure-static-web-apps-<nombre-random>.yml` que Azure commitea solo al
+repo. **Siempre revisar ese archivo después de crear el recurso** y corregir `app_location` /
+`output_location` a mano si no coinciden con la tabla de arriba, luego commit + push (dispara un
+nuevo build automáticamente).
+
+### CORS para el nuevo origen
+
+Agregar `https://icy-wave-040fef60f.7.azurestaticapps.net` en **ambas** capas de CORS del backend
+(ver sección "CORS — hay DOS capas distintas" más arriba): Portal (plataforma, inmediato) y
+`Program.cs` (código, requiere republicar).
+
+### Verificación
+
+- `git pull` trae el workflow autogenerado (`.github/workflows/azure-static-web-apps-*.yml`).
+- El primer deploy tarda unos minutos; mientras tanto la URL del Static Web App muestra la página
+  default de "party popper" de Azure, no la app. Verificar con `curl` que el HTML devuelto tenga
+  `<title>CarFixApp</title>` (o inspeccionar visualmente) para confirmar que ya es el build real.
+- Preflight CORS: `curl -i -X OPTIONS <backend>/api/autenticacion/iniciar-sesion -H "Origin: <url-swa>" -H "Access-Control-Request-Method: POST"` debe devolver `200` con `Access-Control-Allow-Origin` en la respuesta.
+- Login real desde el navegador en la URL del Static Web App, contra el backend de Azure.
 
 ## Pasos para publicar y probar
 
@@ -165,3 +268,10 @@ externo (500.30) pero excepciones distintas en el log.
 
 **Confirmado funcionando end-to-end el 2026-07-12:** login desde `http://localhost:4200`, alta de
 un cliente desde la UI, y verificado en SSMS que el registro llegó a `appcarfixdb` en Azure SQL.
+
+**Stack completo en producción, confirmado el 2026-07-12:** frontend en
+`https://icy-wave-040fef60f.7.azurestaticapps.net` (Azure Static Web Apps) llamando al backend en
+`https://appcarfix-hdeyb4dncbdwbchg.canadaeast-01.azurewebsites.net` (Azure App Service) contra
+`appcarfixdb` (Azure SQL Database) — preflight CORS y login verificados por `curl` con
+`Origin: https://icy-wave-040fef60f.7.azurestaticapps.net` devolviendo `200` con
+`Access-Control-Allow-Origin` correcto en ambas capas de CORS (plataforma + código).
