@@ -43,7 +43,7 @@ try
     builder.Services.AddCors(opciones =>
         opciones.AddPolicy("OrigenAngular", politica =>
             politica
-                .WithOrigins("http://localhost:4200", "http://192.168.10.112:4200", "https://192.168.10.112:4200")
+                .WithOrigins("http://localhost:4200", "http://192.168.10.112:4200", "https://192.168.10.112:4200", "https://icy-wave-040fef60f.7.azurestaticapps.net")
                 .AllowAnyHeader()
                 .AllowAnyMethod()));
 
