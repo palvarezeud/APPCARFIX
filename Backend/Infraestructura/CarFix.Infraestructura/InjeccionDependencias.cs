@@ -45,6 +45,7 @@ public static class InjeccionDependencias
             return new AnthropicClient { ApiKey = apiKey };
         });
         services.AddScoped<IServicioVisionVehiculo, ServicioVisionAnthropic>();
+        services.AddScoped<IServicioVisionFacturaRepuesto, ServicioVisionFacturaRepuestoAnthropic>();
         services.AddScoped<IServicioLlamadaAnthropicJson, ServicioLlamadaAnthropicJson>();
         services.AddScoped<IServicioAsistenteVoz, ServicioAsistenteVozAnthropic>();
 

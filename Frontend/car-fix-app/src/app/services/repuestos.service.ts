@@ -3,6 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
 import { RepuestoDto, AgregarRepuestoRequest, ActualizarRepuestoRequest } from '../models/repuesto.model';
+import { DatosFacturaRepuestoExtraidosDto } from '../models/datos-factura-repuesto-extraidos.model';
 
 @Injectable({ providedIn: 'root' })
 export class RepuestosService {
@@ -27,5 +28,11 @@ export class RepuestosService {
 
   eliminar(id: number): Observable<void> {
     return this.http.delete<void>(`${this.base}/${id}`);
+  }
+
+  escanearFacturaRepuesto(foto: File): Observable<DatosFacturaRepuestoExtraidosDto> {
+    const formData = new FormData();
+    formData.append('foto', foto);
+    return this.http.post<DatosFacturaRepuestoExtraidosDto>(`${this.base}/escanear-factura`, formData);
   }
 }

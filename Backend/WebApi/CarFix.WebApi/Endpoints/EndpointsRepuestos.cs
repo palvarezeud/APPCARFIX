@@ -1,6 +1,7 @@
 using CarFix.Aplicacion.Features.Repuestos.Commands.ActualizarRepuesto;
 using CarFix.Aplicacion.Features.Repuestos.Commands.AgregarRepuesto;
 using CarFix.Aplicacion.Features.Repuestos.Commands.EliminarRepuesto;
+using CarFix.Aplicacion.Features.Repuestos.Commands.EscanearFacturaRepuesto;
 using CarFix.Aplicacion.Features.Repuestos.Commands.MarcarIncluidoRepuesto;
 using CarFix.Aplicacion.Features.Repuestos.Dtos;
 using CarFix.Aplicacion.Features.Repuestos.Queries.ObtenerRepuestos;
@@ -76,6 +77,35 @@ public static class EndpointsRepuestos
             })
             .WithName("EliminarRepuesto")
             .WithSummary("Elimina un repuesto y actualiza los totales de la factura");
+
+        grupo.MapPost("/escanear-factura",
+            async Task<Results<Ok<DatosFacturaRepuestoExtraidosDto>, BadRequest<string>>>
+            (IFormFile foto, ISender sender) =>
+            {
+                const long tamannoMaximoBytes = 10 * 1024 * 1024;
+                var tiposPermitidos = new[] { "image/jpeg", "image/png", "image/webp" };
+
+                if (foto is null || foto.Length == 0)
+                    return TypedResults.BadRequest("Debe adjuntar una foto.");
+                if (foto.Length > tamannoMaximoBytes)
+                    return TypedResults.BadRequest("La imagen no debe superar 10 MB.");
+                if (!tiposPermitidos.Contains(foto.ContentType.ToLowerInvariant()))
+                    return TypedResults.BadRequest("Formato de imagen no soportado. Use JPEG, PNG o WEBP.");
+
+                await using var stream  = foto.OpenReadStream();
+                using var       memoria = new MemoryStream();
+                await stream.CopyToAsync(memoria);
+
+                var cmd       = new EscanearFacturaRepuestoCommand(memoria.ToArray(), foto.ContentType);
+                var resultado = await sender.Send(cmd);
+
+                return resultado.EsExitoso
+                    ? TypedResults.Ok(resultado.Valor)
+                    : TypedResults.BadRequest(resultado.Error);
+            })
+            .WithName("EscanearFacturaRepuesto")
+            .WithSummary("Extrae repuestos, monto total, fecha, proveedor y numero de factura de una foto de la factura del proveedor")
+            .DisableAntiforgery();
     }
 }
 
