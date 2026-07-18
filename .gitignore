@@ -13,6 +13,10 @@ Backend/**/logs/
 *.user
 .vs/
 
+# Artefactos temporales de despliegue manual a Azure App Service (skill desplegar-azure)
+Backend/WebApi/CarFix.WebApi/publish-tmp/
+Backend/WebApi/CarFix.WebApi/publish.zip
+
 # Angular (Frontend/car-fix-app ya tiene su propio .gitignore mas especifico)
 node_modules/
 dist/
