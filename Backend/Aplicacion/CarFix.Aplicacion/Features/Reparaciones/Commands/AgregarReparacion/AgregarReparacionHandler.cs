@@ -38,8 +38,8 @@ public class AgregarReparacionHandler : IRequestHandler<AgregarReparacionCommand
 
         var factura = await _contexto.Facturas.FindAsync([cmd.FacturaId], ct);
         factura!.TotalReparaciones += cmd.Costo;
-        factura.Total              =  factura.TotalRepuestos + factura.TotalReparaciones - factura.Descuento;
-        factura.Total              += factura.Total * factura.ImpuestoVentas / 100m;
+
+        await RecalculadorTotalesFactura.RecalcularAsync(_contexto, factura, ct);
 
         await RecalculadorFechaSalidaFactura.RecalcularFechaSalidaAsync(
             _contexto, cmd.FacturaId, cmd.DuracionAproximadaHoras, null, ct);

@@ -12,10 +12,12 @@ public record FacturaDto(
     string?  DescripcionGeneral,
     decimal  TotalRepuestos,
     decimal  TotalReparaciones,
-    decimal  Total,
     decimal  Descuento,
-    decimal  Adelanto,
+    decimal  SubTotal,
     decimal  ImpuestoVentas,
+    decimal  Total,
+    decimal  Adelanto,
+    decimal  Pendiente,
     int      EstadoFacturaId,
     string   EstadoFacturaDescripcion
 );

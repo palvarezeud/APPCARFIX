@@ -31,11 +31,16 @@ public class EliminarOrdenHandler : IRequestHandler<EliminarOrdenCommand, Result
         if (orden.Factura is not null && orden.Factura.EstadoFacturaId == 3)
             return Resultado.Fallo("No se puede eliminar una orden con factura en estado Pagada.");
 
-        // Eliminar la factura asociada (Cotizacion o Pendiente) junto con la orden — un solo commit
-        if (orden.Factura is not null)
-            _contexto.Facturas.Remove(orden.Factura);
+        // Eliminar primero la orden (dependiente) y luego la factura (principal): la FK
+        // OrdenServicio.FacturaId es obligatoria, por lo que EF Core no permite eliminar
+        // la Factura mientras la Orden que la referencia siga sin marcarse para eliminar.
+        var factura = orden.Factura;
 
         _contexto.OrdenServicios.Remove(orden);
+
+        if (factura is not null)
+            _contexto.Facturas.Remove(factura);
+
         await _unidadTrabajo.GuardarCambiosAsync(ct);
         return Resultado.Exito();
     }

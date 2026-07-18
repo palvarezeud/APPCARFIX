@@ -1,6 +1,7 @@
 # Credenciales de despliegue — NUNCA subir esto
 appCarFix.PublishSettings
 *.PublishSettings
+docs/
 
 # Certificados de desarrollo autofirmados (se regeneran con la skill arrancar-app)
 dev-certs/

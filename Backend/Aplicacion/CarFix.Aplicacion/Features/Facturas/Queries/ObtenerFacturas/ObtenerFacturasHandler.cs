@@ -38,10 +38,12 @@ public class ObtenerFacturasHandler : IRequestHandler<ObtenerFacturasQuery, Resu
                 f.DescripcionGeneral,
                 f.TotalRepuestos,
                 f.TotalReparaciones,
-                f.Total,
                 f.Descuento,
-                f.Adelanto,
+                f.SubTotal,
                 f.ImpuestoVentas,
+                f.Total,
+                f.Adelanto,
+                f.Pendiente,
                 f.EstadoFacturaId,
                 f.EstadoFactura.Descipcion.Trim()))
             .ToListAsync(ct);

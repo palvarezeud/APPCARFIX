@@ -234,6 +234,7 @@ export class ClientesComponent implements OnInit, OnDestroy {
   }
 
   seleccionar(c: ClienteDto): void {
+    this.error.set(null);
     this.seleccionado.set(this.seleccionado()?.clienteId === c.clienteId ? null : c);
   }
 

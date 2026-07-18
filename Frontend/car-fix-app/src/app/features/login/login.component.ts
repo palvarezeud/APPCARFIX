@@ -32,9 +32,9 @@ interface TokenResponse { token: string; expiracion: string; }
         </div>
 
         <div class="form-grupo">
-          <label for="clave">Contrasenna</label>
+          <label for="clave">Contraseña</label>
           <input id="clave" type="password" [(ngModel)]="password"
-                 placeholder="Ingrese su contrasenna" autocomplete="current-password"
+                 placeholder="Ingrese su contraseña" autocomplete="current-password"
                  (keyup.enter)="iniciarSesion()">
         </div>
 
@@ -59,7 +59,7 @@ export class LoginComponent {
 
   iniciarSesion(): void {
     if (!this.nombreUsuario || !this.password) {
-      this.error.set('Ingrese usuario y contrasenna.');
+      this.error.set('Ingrese usuario y contraseña.');
       return;
     }
     this.error.set(null);

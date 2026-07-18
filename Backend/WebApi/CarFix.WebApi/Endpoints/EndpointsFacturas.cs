@@ -35,7 +35,7 @@ public static class EndpointsFacturas
             {
                 var resultado = await sender.Send(new CrearFacturaCommand(
                     req.VehiculoId, req.Fecha, req.DescripcionGeneral,
-                    req.Descuento, req.Adelanto, req.ImpuestoVentas));
+                    req.Descuento, req.Adelanto));
                 return resultado.EsExitoso
                     ? TypedResults.Created($"/api/facturas/{resultado.Valor}", resultado.Valor)
                     : TypedResults.BadRequest(resultado.Error);
@@ -48,7 +48,7 @@ public static class EndpointsFacturas
             (int id, ActualizarFacturaRequest req, ISender sender) =>
             {
                 var resultado = await sender.Send(new ActualizarFacturaCommand(
-                    id, req.Fecha, req.DescripcionGeneral, req.Descuento, req.Adelanto, req.ImpuestoVentas));
+                    id, req.Fecha, req.DescripcionGeneral, req.Descuento, req.Adelanto));
                 return resultado.EsExitoso
                     ? TypedResults.NoContent()
                     : TypedResults.BadRequest(resultado.Error);
@@ -111,14 +111,12 @@ file record CrearFacturaRequest(
     DateTime Fecha,
     string   DescripcionGeneral,
     decimal  Descuento,
-    decimal  Adelanto,
-    decimal  ImpuestoVentas);
+    decimal  Adelanto);
 
 file record ActualizarFacturaRequest(
     DateTime Fecha,
     string?  DescripcionGeneral,
     decimal  Descuento,
-    decimal  Adelanto,
-    decimal  ImpuestoVentas);
+    decimal  Adelanto);
 
 file record CambiarEstadoRequest(int NuevoEstadoId);

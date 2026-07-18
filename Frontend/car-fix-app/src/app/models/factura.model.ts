@@ -10,10 +10,12 @@ export interface FacturaDto {
   descripcionGeneral:       string | null;
   totalRepuestos:           number;
   totalReparaciones:        number;
-  total:                    number;
   descuento:                number;
-  adelanto:                 number;
+  subTotal:                 number;
   impuestoVentas:           number;
+  total:                    number;
+  adelanto:                 number;
+  pendiente:                number;
   estadoFacturaId:          number;
   estadoFacturaDescripcion: string;
 }
@@ -24,7 +26,6 @@ export interface CrearFacturaRequest {
   descripcionGeneral: string;
   descuento:          number;
   adelanto:           number;
-  impuestoVentas:     number;
 }
 
 export interface ActualizarFacturaRequest {
@@ -32,7 +33,6 @@ export interface ActualizarFacturaRequest {
   descripcionGeneral: string;
   descuento:          number;
   adelanto:           number;
-  impuestoVentas:     number;
 }
 
 export const ESTADOS_FACTURA: Record<number, string> = {

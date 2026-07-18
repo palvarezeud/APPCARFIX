@@ -36,10 +36,10 @@ public class CrearFacturaHandler : IRequestHandler<CrearFacturaCommand, Resultad
             TotalReparaciones  = 0,
             Descuento          = cmd.Descuento,
             Adelanto           = cmd.Adelanto,
-            ImpuestoVentas     = cmd.ImpuestoVentas,
-            Total              = 0,
             EstadoFacturaId    = 1
         };
+
+        await RecalculadorTotalesFactura.RecalcularAsync(_contexto, factura, ct);
 
         await _contexto.Facturas.AddAsync(factura, ct);
         await _unidadTrabajo.GuardarCambiosAsync(ct);

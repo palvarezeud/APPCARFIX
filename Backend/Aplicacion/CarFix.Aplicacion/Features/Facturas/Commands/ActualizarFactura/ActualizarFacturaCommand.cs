@@ -8,6 +8,5 @@ public record ActualizarFacturaCommand(
     DateTime Fecha,
     string?  DescripcionGeneral,
     decimal  Descuento,
-    decimal  Adelanto,
-    decimal  ImpuestoVentas
+    decimal  Adelanto
 ) : IRequest<Resultado>;

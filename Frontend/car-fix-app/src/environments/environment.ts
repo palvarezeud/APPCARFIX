@@ -1,8 +1,7 @@
 /*export const environment = {
   production: false,
-  apiUrl: 'https://192.168.10.105:5152/api'
+  apiUrl: 'https://192.168.10.108:5152/api'
 };*/
-
 
 export const environment = {
   production: false,

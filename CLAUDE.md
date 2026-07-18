@@ -197,7 +197,7 @@ Pantalla con el listado de órdenes de servicio activas (vehículos en el taller
 - Al crear una orden se crea **atomicamente** una factura en estado Cotizacion (un solo commit via patron Unidad de Trabajo).
 - Al eliminar una orden, si tiene factura en estado Cotizacion o Pendiente, se elimina tambien la factura atomicamente. Si la factura esta en estado **Pagada**, no se puede eliminar la orden.
 - **Ordenes en estado Finalizado (4) o Entregado (5) no se pueden eliminar ni modificar** (el backend valida y retorna error).
-- **Calculo automatico de FechaSalida:** cada vez que se agrega, modifica o elimina una reparacion asociada a la factura de la orden, el backend recalcula `FechaSalida = FechaIngreso + suma de horas de las reparaciones con duracion conocida`, saltando por completo los **sabados y domingos** (el taller no labora esos dias). Si ninguna reparacion tiene horas registradas, `FechaSalida` no se modifica. El calculo es un estimado; el campo sigue siendo editable manualmente en la orden y se sobrescribe en el siguiente cambio a las reparaciones. Implementacion: `CalculadoraFechaSalida` y `RecalculadorFechaSalidaFactura` en `CarFix.Aplicacion/Comun/`.
+- **Calculo automatico de FechaSalida:** cada vez que se agrega, modifica o elimina una reparacion asociada a la factura de la orden, el backend recalcula `FechaSalida` simulando el avance del reloj real dentro del horario laboral del taller — parametros `HoraApertura` y `HoraCierre` en `Catalogo.Parametros` (valores actuales: `8:00` y `18:00`, formato `H:mm`/`HH:mm`) — sumando las horas de las reparaciones con duracion conocida y saltando por completo los **sabados y domingos** (el taller no labora esos dias). Si la `FechaIngreso` cae fuera de ese horario (antes de abrir, despues de cerrar, o en fin de semana), el conteo arranca en el siguiente momento laboral valido. Si ninguna reparacion tiene horas registradas, `FechaSalida` no se modifica. Si `HoraApertura`/`HoraCierre` faltan, no se pueden interpretar, o `HoraApertura >= HoraCierre`, la operacion falla explicitamente (`422 Regla de negocio violada`) en vez de calcular con un horario invalido. El calculo es un estimado; el campo sigue siendo editable manualmente en la orden y se sobrescribe en el siguiente cambio a las reparaciones. Implementacion: `CalculadoraFechaSalida` y `RecalculadorFechaSalidaFactura` en `CarFix.Aplicacion/Comun/`.
 
 **Pantalla — requisitos de UI:**
 - Botones, en este orden: **Agregar, Modificar, Eliminar**.
@@ -248,17 +248,19 @@ Pantalla con el listado de facturas activas y proformas (cotizaciones pendientes
 | DescripcionGeneral |             | Información adicional que se desee incluir               |
 | TotalRepuestos     | ✓           | Suma acumulada de los repuestos asociados                |
 | TotalReparaciones  | ✓           | Suma acumulada de las reparaciones asociadas             |
-| Total              | ✓           | Total general                                            |
-| Descuento          | ✓           | Descuento aplicado                                       |
-| Adelanto           | ✓           | Default: `0`; dinero recibido del cliente como adelanto  |
-| ImpuestoVentas     | ✓           | Default: `0`; impuesto de ventas aplicado                |
+| Descuento          | ✓           | Descuento aplicado; editable                             |
+| SubTotal           | ✓           | Calculado: `TotalRepuestos + TotalReparaciones - Descuento`. No editable. |
+| ImpuestoVentas     | ✓           | Calculado (IVA): `SubTotal * tasa`, donde `tasa` viene de `Catalogo.Parametros` (fila `ImpuestoVentas`, ej. `13%`). Ya no es editable ni un porcentaje visible; se muestra como monto (₡). |
+| Total              | ✓           | Calculado: `SubTotal + ImpuestoVentas`. No editable.      |
+| Adelanto           | ✓           | Default: `0`; dinero recibido del cliente como adelanto; editable |
+| Pendiente          | ✓           | Calculado: `Total - Adelanto`. No editable.               |
 | EstadoFacturaID    | ✓           | Estado actual; ver sección 5.2                           |
 
 **Reglas de negocio:**
 - Estado inicial al crear: **Cotización** (ID 1).
 - **Solo se puede eliminar** una factura en estado **Cotización**.
 - **Facturas en estado Pagada (3) no se pueden eliminar ni modificar** (el backend valida y retorna error).
-- Los totales se calculan acumulando los registros de `Reparacion` y `Repuesto` asociados.
+- `TotalRepuestos`/`TotalReparaciones` se acumulan agregando/editando/eliminando registros de `Reparacion`/`Repuesto`. `SubTotal`, `ImpuestoVentas` (IVA), `Total` y `Pendiente` se recalculan automáticamente cada vez que cambian `TotalRepuestos`, `TotalReparaciones`, `Descuento` o `Adelanto` — implementación centralizada en `RecalculadorTotalesFactura` (`CarFix.Aplicacion/Comun/`), que lee la tasa de IVA desde `Catalogo.Parametros` (si el parámetro falta o no es numérico, la tasa cae a `0` sin bloquear la operación).
 - Al cambiar el estado a **Pagada**, el sistema copia automáticamente los repuestos de esa factura a `Catalogo.HistoricoRespuesto`.
 - **Envío de factura por correo:** el botón "Enviar factura" genera un PDF con el diseño de la sección 6 (encabezado del `Taller`, datos de cliente/vehículo, desglose de reparaciones/repuestos y totales) y lo envía por correo al `Email` del cliente asociado (`Factura.VehiculoID → Vehiculo.ClienteID → Cliente.Email`).
   - Requiere que el cliente tenga `Email` registrado; si no, el backend rechaza la solicitud con `400` y el mensaje "El cliente no tiene correo electronico registrado...". El botón se deshabilita en el frontend cuando la factura seleccionada no tiene `emailCliente`.
@@ -274,6 +276,7 @@ Pantalla con el listado de facturas activas y proformas (cotizaciones pendientes
 - Al seleccionar, mostrar detalle de campos con botones Aceptar y Cancelar.
 - En el detalle (modos ver y editar), arriba a la derecha del panel se muestran los botones **Abrir PDF** y **Enviar factura**, habilitados sin importar el estado de la factura. No aparecen en el listado.
 - **En celular** (ancho ≤768px): el listado solo muestra las columnas `#`, `Placa`, `Vehículo` y `Cliente` (Fecha, Repuestos, Reparaciones, Total y Estado se ocultan).
+- **Recálculo en vivo (modo editar):** al escribir `Descuento` o `Adelanto`, `SubTotal`/`IVA`/`Total General`/`Pendiente` se recalculan en el navegador sin esperar a guardar (`computed()` en `facturas.component.ts` que reproduce la misma fórmula de `RecalculadorTotalesFactura`). La tasa de IVA se deriva de `impuestoVentas/subTotal` de la factura ya cargada — evita llamar a `GET /api/parametros`, que está restringido a rol Administrador. El backend sigue siendo la fuente de verdad al guardar.
 
 ---
 
@@ -336,9 +339,12 @@ Sub-pantalla dentro de la Factura para gestionar los repuestos o piezas utilizad
 - El campo `Incluido` se muestra como checkbox interactivo en la lista; se deshabilita si la factura esta en estado **Pagada** o la orden en estado **Finalizado/Entregado**.
 
 **Característica especial — escaneo IA (factura del proveedor):**
-- El mecánico fotografía la factura del proveedor de repuestos.
-- La IA extrae automáticamente: fecha, nombre de la tienda (Repuestera), total de la factura, y cada repuesto con su precio individual.
-- Los datos pre-rellenan el formulario; el mecánico valida y corrige antes de guardar.
+- El mecánico fotografía la factura del proveedor de repuestos, desde el boton "Escanear factura de repuestos" disponible tanto en el mini-formulario de **Agregar** como en el de **Modificar** repuesto (dentro del detalle de la Factura).
+- La IA extrae: la lista de repuestos de la factura (nombre/descripcion de cada linea), el monto **total** de la factura, la fecha, el nombre de la tienda (Repuestera) y el numero de factura.
+- Si la factura tiene varios repuestos, **no se crean varios registros**: los nombres se concatenan con coma en un solo campo `NombreRepuesto`, y `Costo` se llena con el monto total de la factura (no por item). Esta concatenacion la hace el backend (`EscanearFacturaRepuestoHandler`), no el frontend.
+- Los datos pre-rellenan el formulario (solo los campos que la IA pudo leer, sin borrar lo que el mecánico ya haya escrito a mano); el mecánico valida y corrige antes de guardar. Mismo principio de confianza que el escaneo de tarjeta de circulación (sección 5.4).
+- Disponible por igual en escritorio y celular (mismo patron que el escaneo de vehiculo: `capture="environment"` en el input de archivo abre la camara en celular y el selector de archivos en escritorio).
+- Implementación: backend expone `POST /api/repuestos/escanear-factura` (`IFormFile`, limite 10MB, JPEG/PNG/WEBP), que delega en `IServicioVisionFacturaRepuesto` (Dominio) / `ServicioVisionFacturaRepuestoAnthropic` (Infraestructura) — mismo patron que `IServicioVisionVehiculo`/`ServicioVisionAnthropic` de la sección 5.4 (modelo `Anthropic:Modelo`, salida JSON forzada, foto no persistida). Frontend: `RepuestosService.escanearFacturaRepuesto` en `facturas.component.ts`.
 
 ---
 
@@ -429,8 +435,11 @@ Placa: [XXX-000]   Marca: [Toyota]   Modelo: [Corolla]   Año: [2020]
 _______________________________        Total Repuestos:    ₡x.xx
 Recibido de conformidad                Total Reparaciones: ₡x.xx
                                        Descuento:          ₡x.xx
-                                       Impuesto de ventas: ₡x.xx
+                                       SubTotal:           ₡x.xx
+                                       IVA:                ₡x.xx
                                        TOTAL GENERAL:      ₡x.xx
+                                       Adelanto:           ₡x.xx
+                                       Pendiente:          ₡x.xx
 ```
 
 Los datos del encabezado de la factura (nombre, dirección, teléfonos, email) se leen de la tabla `Taller` en base de datos.
@@ -924,6 +933,14 @@ En movil (≤768px), la pantalla de aterrizaje tras el login (ruta `/chat`, deci
 
 **Flujo corto:** si el usuario menciona una placa existente (`orden.placaBuscada` o `vehiculo.nombreClienteBuscado`) en vez de dictar datos nuevos, el chat resuelve el cliente/vehiculo contra `ClientesService.obtener()`/`VehiculosService.obtener()` (mismo patron de busqueda por texto que ya usaba el prellenado de Vehiculos) y salta directo al paso correspondiente.
 
+### 12.15 Instalacion como PWA — Banner Automatico y Opcion de Menu
+
+Dos caminos para instalar CAR FIX como PWA, ambos respaldados por el mismo servicio central `InstalacionPwaService` (`core/pwa/`, `providedIn:'root'`) — evita que el evento `beforeinstallprompt` (el navegador lo dispara una sola vez) quede "atrapado" en un solo componente y no lo pueda usar otro.
+
+- `InstalacionPwaService` centraliza: captura de `beforeinstallprompt`/`appinstalled`, deteccion de iOS (`navigator.userAgent` con fallback `maxTouchPoints` para iPadOS moderno, que oculta "iPad" del user-agent) y deteccion de instalacion previa (`matchMedia('(display-mode: standalone)')` o `navigator.standalone`). Expone `mostrarOpcionInstalar` (computed: `!yaInstalado() && (puedeInstalarAndroid() || esIOS())`) y el metodo `manejarClicMenu()` que bifurca por plataforma.
+- **Banner automatico** (`InstallPromptComponent`, montado en `ShellComponent` junto al FAB de voz): aparece solo si el navegador dispara `beforeinstallprompt` (Chrome/Android/Edge) y el usuario no lo cerro antes en esta sesion (`sessionStorage['install-prompt-cerrado']`). En iOS ese evento nunca se dispara, asi que este banner nunca aparece ahi por si solo.
+- **Opcion de menu** ("📲 Instalar aplicacion", `NavComponent`): visible para **todos los roles autenticados** (no solo Admin — a proposito no se puso en la pantalla de Configuracion, que es Admin-only), y solo cuando `mostrarOpcionInstalar()` es `true`. En Android/Chrome dispara el prompt nativo de instalacion (`instalarAndroid()`); en iOS no existe una API programatica, asi que abre un panel de instrucciones manuales ("Toca el icono Compartir en Safari y selecciona 'Agregar a pantalla de inicio'", reutilizando las clases CSS del banner automatico). El item desaparece del menu apenas la app queda instalada (evento `appinstalled` o `userChoice` aceptado).
+
 ## 12. Estructura del Proyecto
 
 ```
@@ -982,7 +999,7 @@ AppCarFix/
 │   └── speech-recognition.d.ts          # Tipos ambientales del Web Speech API (no estan en lib.dom.d.ts)
 ├── Frontend/car-fix-app/src/app/
 │   ├── core/auth/                       # AuthService, authInterceptor, guards
-│   ├── core/pwa/                        # InstallPromptComponent
+│   ├── core/pwa/                        # InstalacionPwaService, InstallPromptComponent (seccion 12.15)
 │   ├── core/voz/                        # ReconocimientoVozService, AsistenteVozService, AsistenteVozFabComponent
 │   ├── core/comun/                      # EsMovilService (deteccion compartida de movil via matchMedia)
 │   ├── models/                          # Interfaces DTO (*.model.ts)

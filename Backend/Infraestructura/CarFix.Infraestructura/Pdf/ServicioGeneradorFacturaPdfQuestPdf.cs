@@ -125,9 +125,12 @@ public class ServicioGeneradorFacturaPdfQuestPdf : IServicioGeneradorFacturaPdf
                     LineaTotal(der, "Total Repuestos:", factura.TotalRepuestos, false);
                     LineaTotal(der, "Total Reparaciones:", factura.TotalReparaciones, false);
                     LineaTotal(der, "Descuento:", factura.Descuento, false);
-                    LineaTotal(der, "Impuesto de ventas:", factura.ImpuestoVentas, false);
+                    LineaTotal(der, "SubTotal:", factura.SubTotal, false);
+                    LineaTotal(der, "IVA:", factura.ImpuestoVentas, false);
                     der.Item().PaddingTop(4).LineHorizontal(1).LineColor(Colors.Black);
                     LineaTotal(der, "TOTAL GENERAL:", factura.Total, true);
+                    LineaTotal(der, "Adelanto:", factura.Adelanto, false);
+                    LineaTotal(der, "Pendiente:", factura.Pendiente, false);
                 });
             });
         });

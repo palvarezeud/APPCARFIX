@@ -1,6 +1,6 @@
 # Documentación de Base de Datos — CAR_FIX
 
-> **Servidor:** `localhost\SQL2022` | **Base de datos:** `CAR_FIX` | **Fecha de análisis:** 2026-07-09
+> **Servidor:** `localhost\SQL2022` | **Base de datos:** `CAR_FIX` | **Fecha de análisis:** 2026-07-18
 
 Sistema de gestión de reparación de vehículos. Permite registrar clientes, sus vehículos, órdenes de reparación, reparaciones individuales, repuestos utilizados y la facturación correspondiente.
 
@@ -169,15 +169,19 @@ Documento de cobro al cliente. Hub central de reparaciones y repuestos.
 | `DescripcionGeneral` | `varchar(MAX)` | NO   |    |           |         | Descripción general de los trabajos               |
 | `TotalRepuestos`     | `money`        | NO   |    |           |         | Subtotal de repuestos                             |
 | `TotalReparaciones`  | `money`        | NO   |    |           |         | Subtotal de reparaciones                          |
+| `SubTotal`           | `money`        | NO   |    |           | `((0))` | Suma de reparaciones + repuestos antes de descuento/impuesto |
 | `Total`              | `money`        | NO   |    |           |         | Total general                                     |
 | `Descuento`          | `money`        | NO   |    |           |         | Monto de descuento aplicado                       |
 | `Adelanto`           | `money`        | NO   |    |           | `((0))` | Monto de adelanto o depósito recibido             |
+| `Pendiente`          | `money`        | NO   |    |           | `((0))` | Saldo pendiente de cobro (Total - Adelanto)        |
 | `ImpuestoVentas`     | `money`        | NO   |    |           | `((0))` | Impuesto de ventas aplicado                       |
 | `EstadoFacturaID`    | `int`          | NO   |    |           |         | FK → `Catalogo.EstadoFactura.EstadoFacturaID`     |
 
 **Relaciones:** FK a `Catalogo.Vehiculos` (NO ACTION delete/update) y a `Catalogo.EstadoFactura` (NO ACTION delete, CASCADE update). Tiene N `Sistema.Reparacion` y N `Sistema.Repuesto`. `Sistema.OrdenServicio.FacturaID` la referencia con FK enforced.
 
 > **Observación:** La tabla no tiene `ClienteID` ni `OrdenServicioID`. El vínculo con el cliente es indirecto vía `VehiculoID → Catalogo.Vehiculos.ClienteID`. No existe FK directa hacia `OrdenServicio`; la trazabilidad va en sentido contrario (`OrdenServicio.FacturaID`). `NombreCliente` es un snapshot desnormalizado del nombre del cliente al momento de la factura.
+>
+> **`SubTotal` y `Pendiente`:** columnas calculadas por la aplicación (`RecalculadorTotalesFactura` en `CarFix.Aplicacion/Comun/`), no editables por el usuario. `SubTotal = TotalRepuestos + TotalReparaciones - Descuento`; `ImpuestoVentas` (IVA) se calcula como `SubTotal * tasa` leyendo la tasa desde `Catalogo.Parametros` (fila `ImpuestoVentas`); `Total = SubTotal + ImpuestoVentas`; `Pendiente = Total - Adelanto`. Ver `CLAUDE.md` sección 5.6.
 
 ---
 
@@ -341,7 +345,7 @@ Usuarios del sistema con credenciales de acceso y rol asignado.
 
 ### `Catalogo.Parametros`
 
-Tabla nueva (no documentada previamente). Catálogo genérico clave/valor para parámetros de configuración del sistema.
+Catálogo genérico clave/valor para parámetros de configuración del sistema (tasa de IVA, horario laboral del taller, etc.).
 
 | Columna       | Tipo           | Nulo | PK | Identity  | Descripción                          |
 |---------------|----------------|------|----|-----------|----------------------------------------|
@@ -351,13 +355,15 @@ Tabla nueva (no documentada previamente). Catálogo genérico clave/valor para p
 
 **Valores actuales:**
 
-| ID | Nombre         | Valor |
-|----|----------------|-------|
-| 1  | ImpuestoVentas | 10%   |
+| ID | Nombre         | Valor | Uso                                                                 |
+|----|----------------|-------|----------------------------------------------------------------------|
+| 1  | ImpuestoVentas | 13%   | Tasa de IVA calculada sobre `SubTotal` de Facturas (ver sección 5.6 de `CLAUDE.md`) |
+| 5  | HoraApertura   | 8:00  | Hora de apertura del taller; usada para calcular `FechaSalida` (ver sección 5.5) |
+| 6  | HoraCierre     | 18:00 | Hora de cierre del taller; usada para calcular `FechaSalida` (ver sección 5.5) |
 
 **Relaciones:** Ninguna. Tabla independiente sin FKs entrantes ni salientes.
 
-> **Observación:** Parece destinada a alimentar la futura pantalla "Configuración del sistema" (ver `CLAUDE.md` sección 1, marcada como pendiente). Estructura genérica de texto libre — no hay validación de tipo por parámetro a nivel de BD.
+> **Observación:** Ya alimenta el cálculo de IVA (Facturas) y de `FechaSalida` (Órdenes de Servicio) desde el backend; falta la pantalla "Configuración del sistema" (ver `CLAUDE.md` sección 1, marcada como pendiente) para administrarla desde la UI en vez de por SQL directo. Estructura genérica de texto libre — no hay validación de tipo por parámetro a nivel de BD (ej. `HoraApertura >= HoraCierre` solo se valida en la aplicación al usarlo, no al guardarlo).
 
 ---
 

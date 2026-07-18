@@ -1,10 +1,13 @@
+using System.Globalization;
+using CarFix.Dominio.Excepciones;
 using CarFix.Dominio.Interfaces;
 using Microsoft.EntityFrameworkCore;
 
 namespace CarFix.Aplicacion.Comun;
 
-// Recalcula la FechaSalida de la orden asociada a una factura sumando las
-// horas de reparacion conocidas a la FechaIngreso (saltando fines de semana).
+// Recalcula la FechaSalida de la orden asociada a una factura simulando el
+// horario laboral real del taller (HoraApertura/HoraCierre en Catalogo.Parametros)
+// a partir de la FechaIngreso, saltando fines de semana.
 // Si el total de horas conocidas es 0, se deja la FechaSalida sin tocar.
 public static class RecalculadorFechaSalidaFactura
 {
@@ -30,6 +33,24 @@ public static class RecalculadorFechaSalidaFactura
         if (orden is null)
             return;
 
-        orden.FechaSalida = CalculadoraFechaSalida.Calcular(orden.FechaIngreso, totalHoras);
+        var parametros = await contexto.Parametros
+            .Where(p => p.Nombre == "HoraApertura" || p.Nombre == "HoraCierre")
+            .ToListAsync(ct);
+
+        var apertura = ParsearHora(parametros.FirstOrDefault(p => p.Nombre == "HoraApertura")?.Valor);
+        var cierre   = ParsearHora(parametros.FirstOrDefault(p => p.Nombre == "HoraCierre")?.Valor);
+
+        if (apertura is null || cierre is null || apertura >= cierre)
+            throw new ExcepcionDominio("El horario del taller (HoraApertura/HoraCierre) no esta configurado correctamente en Catalogo.Parametros.");
+
+        orden.FechaSalida = CalculadoraFechaSalida.Calcular(orden.FechaIngreso, totalHoras, apertura.Value, cierre.Value);
+    }
+
+    private static TimeSpan? ParsearHora(string? valor)
+    {
+        if (string.IsNullOrWhiteSpace(valor))
+            return null;
+
+        return TimeSpan.TryParse(valor.Trim(), CultureInfo.InvariantCulture, out var hora) ? hora : null;
     }
 }

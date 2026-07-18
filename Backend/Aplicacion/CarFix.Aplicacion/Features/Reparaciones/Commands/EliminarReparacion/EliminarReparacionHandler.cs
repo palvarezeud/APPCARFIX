@@ -30,8 +30,8 @@ public class EliminarReparacionHandler : IRequestHandler<EliminarReparacionComma
 
         var factura = reparacion.Factura;
         factura.TotalReparaciones -= reparacion.Costo;
-        var subtotal  = factura.TotalRepuestos + factura.TotalReparaciones - factura.Descuento;
-        factura.Total = subtotal + subtotal * factura.ImpuestoVentas / 100m;
+
+        await RecalculadorTotalesFactura.RecalcularAsync(_contexto, factura, ct);
 
         _contexto.Reparacions.Remove(reparacion);
 

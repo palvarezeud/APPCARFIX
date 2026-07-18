@@ -352,6 +352,7 @@ export class OrdenesComponent implements OnInit {
   }
 
   seleccionar(o: OrdenServicioDto): void {
+    this.error.set(null);
     if (this.seleccionado()?.ordenServicioId === o.ordenServicioId) {
       this.seleccionado.set(null);
     } else {

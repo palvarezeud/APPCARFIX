@@ -69,6 +69,24 @@ body {
   font-weight: 600;
 }
 
+.nav-lista button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 11px 16px;
+  color: var(--color-texto-claro);
+  font-size: 13.5px;
+  background: none;
+  border: none;
+  border-left: 3px solid transparent;
+  text-align: left;
+  cursor: pointer;
+  transition: background .15s, border-color .15s;
+}
+
+.nav-lista button:hover { background: var(--color-sidebar-hover); }
+
 .nav-separador { height: 1px; background: rgba(255,255,255,.08); margin: 6px 0; }
 
 .sidebar-footer { padding: 12px 16px; border-top: 1px solid rgba(255,255,255,.08); }

@@ -1,10 +1,13 @@
-import { Component, OnInit, signal } from '@angular/core';
+import { Component, effect, inject, signal } from '@angular/core';
+import { InstalacionPwaService } from './instalacion-pwa.service';
+
+const CLAVE_CERRADO = 'install-prompt-cerrado';
 
 @Component({
   standalone: true,
   selector: 'app-install-prompt',
   template: `
-    @if (mostrar()) {
+    @if (mostrarBanner()) {
       <div class="install-banner">
         <div class="install-banner-texto">
           <strong>CAR FIX</strong>
@@ -16,32 +19,39 @@ import { Component, OnInit, signal } from '@angular/core';
         </div>
       </div>
     }
+    @if (pwaService.mostrarInstruccionesIos()) {
+      <div class="install-banner">
+        <div class="install-banner-texto">
+          <strong>CAR FIX</strong>
+          <span>Toca el icono Compartir en Safari y selecciona "Agregar a pantalla de inicio"</span>
+        </div>
+        <div class="install-banner-acciones">
+          <button class="install-btn-cerrar" (click)="pwaService.cerrarInstruccionesIos()" aria-label="Cerrar">✕</button>
+        </div>
+      </div>
+    }
   `
 })
-export class InstallPromptComponent implements OnInit {
-  mostrar = signal(false);
-  private eventoInstalacion: any = null;
+export class InstallPromptComponent {
+  protected readonly pwaService = inject(InstalacionPwaService);
 
-  ngOnInit() {
-    window.addEventListener('beforeinstallprompt', (e: Event) => {
-      e.preventDefault();
-      this.eventoInstalacion = e;
-      if (!sessionStorage.getItem('install-prompt-cerrado')) {
-        this.mostrar.set(true);
-      }
+  private readonly cerradoEnSesion = signal(!!sessionStorage.getItem(CLAVE_CERRADO));
+
+  mostrarBanner = signal(false);
+
+  constructor() {
+    effect(() => {
+      this.mostrarBanner.set(this.pwaService.puedeInstalarAndroid() && !this.cerradoEnSesion());
     });
   }
 
   instalar() {
-    this.eventoInstalacion?.prompt();
-    this.eventoInstalacion?.userChoice.then(() => {
-      this.eventoInstalacion = null;
-      this.mostrar.set(false);
-    });
+    this.pwaService.instalarAndroid();
+    this.mostrarBanner.set(false);
   }
 
   cerrar() {
-    sessionStorage.setItem('install-prompt-cerrado', '1');
-    this.mostrar.set(false);
+    sessionStorage.setItem(CLAVE_CERRADO, '1');
+    this.cerradoEnSesion.set(true);
   }
 }

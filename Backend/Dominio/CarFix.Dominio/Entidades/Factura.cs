@@ -44,24 +44,34 @@ public partial class Factura
     public decimal TotalReparaciones { get; set; }
 
     /// <summary>
-    /// Total de la factura 
-    /// </summary>
-    public decimal Total { get; set; }
-
-    /// <summary>
     /// Si aplica algún descuento
     /// </summary>
     public decimal Descuento { get; set; }
 
     /// <summary>
-    /// Si el cliente dio un adelanto de dinero 
+    /// Repuestos + reparaciones menos el descuento
+    /// </summary>
+    public decimal SubTotal { get; set; }
+
+    /// <summary>
+    /// Impuesto de ventas calculado sobre el SubTotal
+    /// </summary>
+    public decimal ImpuestoVentas { get; set; }
+
+    /// <summary>
+    /// Total de la factura
+    /// </summary>
+    public decimal Total { get; set; }
+
+    /// <summary>
+    /// Si el cliente dio un adelanto de dinero
     /// </summary>
     public decimal Adelanto { get; set; }
 
     /// <summary>
-    /// Almacena el impuesto de ventas de la factura
+    /// Saldo pendiente de cobro (Total menos Adelanto)
     /// </summary>
-    public decimal ImpuestoVentas { get; set; }
+    public decimal Pendiente { get; set; }
 
     /// <summary>
     /// Estado de la factura

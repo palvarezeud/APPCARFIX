@@ -38,8 +38,8 @@ public class ActualizarRepuestoHandler : IRequestHandler<ActualizarRepuestoComma
 
         var factura = repuesto.FacturaNavigation;
         factura.TotalRepuestos += diferencia;
-        var subtotal  = factura.TotalRepuestos + factura.TotalReparaciones - factura.Descuento;
-        factura.Total = subtotal + subtotal * factura.ImpuestoVentas / 100m;
+
+        await RecalculadorTotalesFactura.RecalcularAsync(_contexto, factura, ct);
 
         await _unidadTrabajo.GuardarCambiosAsync(ct);
         return Resultado.Exito();

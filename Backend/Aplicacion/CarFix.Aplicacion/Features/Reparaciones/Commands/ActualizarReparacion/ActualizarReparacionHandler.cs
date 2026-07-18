@@ -36,8 +36,8 @@ public class ActualizarReparacionHandler : IRequestHandler<ActualizarReparacionC
 
         var factura = reparacion.Factura;
         factura.TotalReparaciones += diferencia;
-        var subtotal  = factura.TotalRepuestos + factura.TotalReparaciones - factura.Descuento;
-        factura.Total = subtotal + subtotal * factura.ImpuestoVentas / 100m;
+
+        await RecalculadorTotalesFactura.RecalcularAsync(_contexto, factura, ct);
 
         await RecalculadorFechaSalidaFactura.RecalcularFechaSalidaAsync(
             _contexto, factura.FacturaId, cmd.DuracionAproximadaHoras, cmd.ReparacionId, ct);

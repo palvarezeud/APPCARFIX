@@ -128,6 +128,12 @@ public partial class CarFixDbContext : DbContext
                 .HasMaxLength(200)
                 .IsUnicode(false)
                 .HasComment("Nombre del cliente");
+            entity.Property(e => e.Pendiente)
+                .HasComment("Saldo pendiente de cobro (Total menos Adelanto)")
+                .HasColumnType("money");
+            entity.Property(e => e.SubTotal)
+                .HasComment("Repuestos + reparaciones menos el descuento")
+                .HasColumnType("money");
             entity.Property(e => e.Total)
                 .HasComment("Total de la factura ")
                 .HasColumnType("money");

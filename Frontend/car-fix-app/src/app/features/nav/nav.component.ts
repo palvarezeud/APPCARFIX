@@ -2,6 +2,7 @@ import { Component, inject, signal } from '@angular/core';
 import { RouterLink, RouterLinkActive } from '@angular/router';
 import { AuthService } from '../../core/auth/auth.service';
 import { EsMovilService } from '../../core/comun/es-movil.service';
+import { InstalacionPwaService } from '../../core/pwa/instalacion-pwa.service';
 
 @Component({
   standalone: true,
@@ -49,6 +50,10 @@ import { EsMovilService } from '../../core/comun/es-movil.service';
         <li><a routerLink="/clientes"  routerLinkActive="activo" (click)="cerrar()">👤 Clientes</a></li>
         <li><a routerLink="/vehiculos" routerLinkActive="activo" (click)="cerrar()">🚗 Vehiculos</a></li>
 
+        @if (pwaService.mostrarOpcionInstalar()) {
+          <li><button (click)="pwaService.manejarClicMenu(); cerrar()">📲 Instalar aplicacion</button></li>
+        }
+
         @if (auth.esJefe()) {
           <li><div class="nav-separador"></div></li>
           <li><a routerLink="/catalogo-reparaciones" routerLinkActive="activo" (click)="cerrar()">🔧 Catalogo reparaciones</a></li>
@@ -73,6 +78,7 @@ import { EsMovilService } from '../../core/comun/es-movil.service';
 export class NavComponent {
   protected readonly auth = inject(AuthService);
   protected readonly esMovilSvc = inject(EsMovilService);
+  protected readonly pwaService = inject(InstalacionPwaService);
   menuAbierto = signal(false);
 
   cerrar() { this.menuAbierto.set(false); }

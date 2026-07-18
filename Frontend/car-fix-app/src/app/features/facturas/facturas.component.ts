@@ -14,6 +14,8 @@ import { ReparacionesService } from '../../services/reparaciones.service';
 import { RepuestosService } from '../../services/repuestos.service';
 import { TiposReparacionService } from '../../services/tipos-reparacion.service';
 import { HistoricoRepuestosService } from '../../services/historico-repuestos.service';
+import { DatosFacturaRepuestoExtraidosDto } from '../../models/datos-factura-repuesto-extraidos.model';
+import { comprimirImagen } from '../../utils/imagen.util';
 
 type Modo = 'ver' | 'editar';
 
@@ -354,6 +356,18 @@ type Modo = 'ver' | 'editar';
 
                 <!-- Formulario agregar repuesto -->
                 @if (mostrarFormRepuesto()) {
+                  <!-- Escaneo IA de factura de repuestos -->
+                  <div class="escaneo-ia">
+                    <input #inputFotoFacturaAgregar type="file" accept="image/*" capture="environment" hidden
+                           (change)="onFotoFacturaSeleccionada($event, 'agregar')">
+                    <button type="button" class="btn btn-secundario" [disabled]="escaneandoRepuesto()"
+                            (click)="inputFotoFacturaAgregar.click()">
+                      @if (escaneandoRepuesto()) { &#x1F50D;&#x1F4C4; Detectando informacion de la factura... } @else { &#x1F50D;&#x1F4C4; Escanear factura de repuestos }
+                    </button>
+                    @if (mensajeEscaneoRepuesto()) { <div class="alerta alerta-info">{{ mensajeEscaneoRepuesto() }}</div> }
+                    @if (errorEscaneoRepuesto())   { <div class="alerta alerta-error">{{ errorEscaneoRepuesto() }}</div> }
+                  </div>
+
                   <!-- Panel busqueda catalogo de repuestos (historico) -->
                   <div class="panel-ref">
                     <button class="btn-ref-toggle" (click)="mostrarHistorico.set(!mostrarHistorico())">
@@ -448,6 +462,18 @@ type Modo = 'ver' | 'editar';
 
                 <!-- Formulario editar repuesto -->
                 @if (repuEditando()) {
+                  <!-- Escaneo IA de factura de repuestos -->
+                  <div class="escaneo-ia">
+                    <input #inputFotoFacturaEditar type="file" accept="image/*" capture="environment" hidden
+                           (change)="onFotoFacturaSeleccionada($event, 'editar')">
+                    <button type="button" class="btn btn-secundario" [disabled]="escaneandoRepuesto()"
+                            (click)="inputFotoFacturaEditar.click()">
+                      @if (escaneandoRepuesto()) { &#x1F50D;&#x1F4C4; Detectando informacion de la factura... } @else { &#x1F50D;&#x1F4C4; Escanear factura de repuestos }
+                    </button>
+                    @if (mensajeEscaneoRepuesto()) { <div class="alerta alerta-info">{{ mensajeEscaneoRepuesto() }}</div> }
+                    @if (errorEscaneoRepuesto())   { <div class="alerta alerta-error">{{ errorEscaneoRepuesto() }}</div> }
+                  </div>
+
                   <div class="sub-form sub-form-editar">
                     <div class="form-grupo form-grupo-ancho">
                       <label>Nombre del Repuesto *</label>
@@ -525,14 +551,20 @@ type Modo = 'ver' | 'editar';
             <div class="form-grupo"><label>Descuento</label>
               <input type="text" [value]="'₡' + (seleccionada()?.descuento | number:'1.2-2')" readonly />
             </div>
-            <div class="form-grupo"><label>Imp. Ventas (%)</label>
-              <input type="text" [value]="(seleccionada()?.impuestoVentas ?? 0) + '%'" readonly />
+            <div class="form-grupo"><label>SubTotal</label>
+              <input type="text" [value]="'₡' + (seleccionada()?.subTotal | number:'1.2-2')" readonly />
+            </div>
+            <div class="form-grupo"><label>IVA</label>
+              <input type="text" [value]="'₡' + (seleccionada()?.impuestoVentas | number:'1.2-2')" readonly />
+            </div>
+            <div class="form-grupo"><label>Total General</label>
+              <input type="text" [value]="'₡' + (seleccionada()?.total | number:'1.2-2')" readonly class="campo-total-ro" />
             </div>
             <div class="form-grupo"><label>Adelanto</label>
               <input type="text" [value]="'₡' + (seleccionada()?.adelanto | number:'1.2-2')" readonly />
             </div>
-            <div class="form-grupo"><label>Total General</label>
-              <input type="text" [value]="'₡' + (seleccionada()?.total | number:'1.2-2')" readonly class="campo-total-ro" />
+            <div class="form-grupo"><label>Pendiente</label>
+              <input type="text" [value]="'₡' + (seleccionada()?.pendiente | number:'1.2-2')" readonly />
             </div>
           </div>
         }
@@ -548,16 +580,21 @@ type Modo = 'ver' | 'editar';
               <input type="number" min="0" step="0.01" [value]="descuento()"
                      (input)="descuento.set(+$any($event.target).value)" />
             </div>
-            <div class="form-grupo"><label>Imp. Ventas (%)</label>
-              <input type="number" min="0" max="100" step="0.01" [value]="impuestoVentas()"
-                     (input)="impuestoVentas.set(+$any($event.target).value)" />
+            <div class="form-grupo"><label>SubTotal</label>
+              <input type="text" [value]="'₡' + (subTotalCalculado() | number:'1.2-2')" readonly class="campo-readonly" />
+            </div>
+            <div class="form-grupo"><label>IVA</label>
+              <input type="text" [value]="'₡' + (impuestoVentasCalculado() | number:'1.2-2')" readonly class="campo-readonly" />
+            </div>
+            <div class="form-grupo"><label>Total General</label>
+              <input type="text" [value]="'₡' + (totalCalculado() | number:'1.2-2')" readonly class="campo-readonly campo-total-ro" />
             </div>
             <div class="form-grupo"><label>Adelanto (&#x20A1;)</label>
               <input type="number" min="0" step="0.01" [value]="adelanto()"
                      (input)="adelanto.set(+$any($event.target).value)" />
             </div>
-            <div class="form-grupo"><label>Total General</label>
-              <input type="text" [value]="'₡' + (seleccionada()?.total | number:'1.2-2')" readonly class="campo-readonly campo-total-ro" />
+            <div class="form-grupo"><label>Pendiente</label>
+              <input type="text" [value]="'₡' + (pendienteCalculado() | number:'1.2-2')" readonly class="campo-readonly" />
             </div>
           </div>
         }
@@ -685,8 +722,30 @@ export class FacturasComponent implements OnInit {
   descripcionGeneral = signal('');
   descuento          = signal(0);
   adelanto           = signal(0);
-  impuestoVentas     = signal(0);
   estadoFacturaId    = signal(1);
+
+  // ── Recalculo en vivo de totales al editar Descuento/Adelanto ──────
+  // La tasa de IVA se deriva de los valores ya calculados por el backend
+  // (impuestoVentas / subTotal) en vez de pedirla a /api/parametros, que
+  // esta restringido a Administrador — asi cualquier rol que edite
+  // Facturas ve el recalculo sin necesitar ese permiso.
+  private tasaIva = computed(() => {
+    const f = this.seleccionada();
+    if (!f || f.subTotal <= 0) return 0;
+    return f.impuestoVentas / f.subTotal;
+  });
+
+  subTotalCalculado = computed(() => {
+    const f = this.seleccionada();
+    if (!f) return 0;
+    return f.totalRepuestos + f.totalReparaciones - this.descuento();
+  });
+
+  impuestoVentasCalculado = computed(() => this.subTotalCalculado() * this.tasaIva());
+
+  totalCalculado = computed(() => this.subTotalCalculado() + this.impuestoVentasCalculado());
+
+  pendienteCalculado = computed(() => this.totalCalculado() - this.adelanto());
 
   // ── Reparaciones y Repuestos (columnas simultaneas) ────────────
   reparaciones          = signal<ReparacionDto[]>([]);
@@ -746,6 +805,11 @@ export class FacturasComponent implements OnInit {
 
   // ── Seleccion de fila (Modificar/Eliminar en la barra de acciones) ──
   repuestoSeleccionado = signal<RepuestoDto | null>(null);
+
+  // ── Escaneo IA de factura de repuestos ─────────────────────────
+  escaneandoRepuesto     = signal(false);
+  mensajeEscaneoRepuesto = signal<string | null>(null);
+  errorEscaneoRepuesto   = signal<string | null>(null);
 
   // ── Catalogo de repuestos (historico) ──────────────────────────
   mostrarHistorico  = signal(false);
@@ -812,7 +876,6 @@ export class FacturasComponent implements OnInit {
     this.descripcionGeneral.set(f.descripcionGeneral ?? '');
     this.descuento.set(f.descuento);
     this.adelanto.set(f.adelanto);
-    this.impuestoVentas.set(f.impuestoVentas);
     this.estadoFacturaId.set(f.estadoFacturaId);
     this.reiniciarSubForms();
     if (this.reparaciones().length === 0 && this.repuestos().length === 0) {
@@ -845,8 +908,7 @@ export class FacturasComponent implements OnInit {
     this.guardando.set(true);
     this.svc.actualizar(id, {
       fecha: this.fecha(), descripcionGeneral: this.descripcionGeneral(),
-      descuento: this.descuento(), adelanto: this.adelanto(),
-      impuestoVentas: this.impuestoVentas()
+      descuento: this.descuento(), adelanto: this.adelanto()
     }).subscribe({
       next: () => {
         if (nuevoEstado !== estadoAnterior) {
@@ -1115,6 +1177,9 @@ export class FacturasComponent implements OnInit {
       this.histResultados.set([]);
     }
     this.errorSubForm.set('');
+    this.escaneandoRepuesto.set(false);
+    this.mensajeEscaneoRepuesto.set(null);
+    this.errorEscaneoRepuesto.set(null);
   }
 
   guardarRepuesto() {
@@ -1158,6 +1223,9 @@ export class FacturasComponent implements OnInit {
     this.repuEditRepuestera.set(r.repuestera);
     this.repuEditNumFactura.set(r.factura ?? '');
     this.errorSubForm.set('');
+    this.escaneandoRepuesto.set(false);
+    this.mensajeEscaneoRepuesto.set(null);
+    this.errorEscaneoRepuesto.set(null);
   }
 
   guardarEdicionRepuesto() {
@@ -1193,6 +1261,56 @@ export class FacturasComponent implements OnInit {
       },
       error: err => alert(this.extraerError(err))
     });
+  }
+
+  // ── Escaneo IA de factura de repuestos ──────────────────────────
+  async onFotoFacturaSeleccionada(event: Event, destino: 'agregar' | 'editar'): Promise<void> {
+    const input   = event.target as HTMLInputElement;
+    const archivo = input.files?.[0];
+    input.value = '';
+
+    if (!archivo) return;
+
+    this.escaneandoRepuesto.set(true);
+    this.mensajeEscaneoRepuesto.set(null);
+    this.errorEscaneoRepuesto.set(null);
+
+    try {
+      const comprimida = await comprimirImagen(archivo);
+      this.repuSvc.escanearFacturaRepuesto(comprimida).subscribe({
+        next: datos => {
+          this.escaneandoRepuesto.set(false);
+          this.aplicarDatosEscaneadosRepuesto(datos, destino);
+          this.mensajeEscaneoRepuesto.set('Datos extraidos de la foto. Revise y corrija antes de guardar.');
+        },
+        error: (err: { error?: string }) => {
+          this.escaneandoRepuesto.set(false);
+          this.errorEscaneoRepuesto.set(
+            err.error ?? 'No se pudo leer la foto. Complete los datos manualmente.');
+        }
+      });
+    } catch {
+      this.escaneandoRepuesto.set(false);
+      this.errorEscaneoRepuesto.set('No se pudo procesar la foto. Intente de nuevo o complete manualmente.');
+    }
+  }
+
+  private aplicarDatosEscaneadosRepuesto(
+    datos: DatosFacturaRepuestoExtraidosDto, destino: 'agregar' | 'editar'
+  ): void {
+    if (destino === 'agregar') {
+      if (datos.nombreRepuesto) this.subNombreRepuesto.set(datos.nombreRepuesto);
+      if (datos.costo != null)  this.subCostoRepuesto.set(datos.costo);
+      if (datos.fecha)          this.subFechaRepuesto.set(datos.fecha);
+      if (datos.repuestera)     this.subRepuestera.set(datos.repuestera);
+      if (datos.numeroFactura)  this.subNumeroFactura.set(datos.numeroFactura);
+    } else {
+      if (datos.nombreRepuesto) this.repuEditNombre.set(datos.nombreRepuesto);
+      if (datos.costo != null)  this.repuEditCosto.set(datos.costo);
+      if (datos.fecha)          this.repuEditFecha.set(datos.fecha);
+      if (datos.repuestera)     this.repuEditRepuestera.set(datos.repuestera);
+      if (datos.numeroFactura)  this.repuEditNumFactura.set(datos.numeroFactura);
+    }
   }
 
   // ── Catalogo de repuestos (historico) ──────────────────────────

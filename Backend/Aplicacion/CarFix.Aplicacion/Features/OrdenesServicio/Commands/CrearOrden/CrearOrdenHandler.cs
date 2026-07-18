@@ -35,12 +35,12 @@ public class CrearOrdenHandler : IRequestHandler<CrearOrdenCommand, Resultado<Cr
             DescripcionGeneral = string.Empty,
             TotalRepuestos     = 0,
             TotalReparaciones  = 0,
-            Total              = 0,
             Descuento          = 0,
             Adelanto           = 0,
-            ImpuestoVentas     = 0,
             EstadoFacturaId    = 1 // Cotizacion
         };
+
+        await RecalculadorTotalesFactura.RecalcularAsync(_contexto, factura, ct);
 
         var orden = new OrdenServicio
         {

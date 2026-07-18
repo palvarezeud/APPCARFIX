@@ -378,6 +378,7 @@ export class VehiculosComponent implements OnInit, OnDestroy {
   }
 
   seleccionar(v: VehiculoDto): void {
+    this.error.set(null);
     this.seleccionado.set(this.seleccionado()?.vehiculoId === v.vehiculoId ? null : v);
   }
 

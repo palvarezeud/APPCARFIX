@@ -30,8 +30,8 @@ public class EliminarRepuestoHandler : IRequestHandler<EliminarRepuestoCommand, 
 
         var factura = repuesto.FacturaNavigation;
         factura.TotalRepuestos -= repuesto.Costo;
-        var subtotal  = factura.TotalRepuestos + factura.TotalReparaciones - factura.Descuento;
-        factura.Total = subtotal + subtotal * factura.ImpuestoVentas / 100m;
+
+        await RecalculadorTotalesFactura.RecalcularAsync(_contexto, factura, ct);
 
         _contexto.Repuestos.Remove(repuesto);
         await _unidadTrabajo.GuardarCambiosAsync(ct);
