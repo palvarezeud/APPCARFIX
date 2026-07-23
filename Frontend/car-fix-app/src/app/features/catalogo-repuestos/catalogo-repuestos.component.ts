@@ -212,7 +212,7 @@ export class CatalogoRepuestosComponent implements OnInit {
   guardar(): void {
     if (!this.form.marca.trim())              { this.errorForm.set('La marca es requerida.'); return; }
     if (!this.form.modelo.trim())             { this.errorForm.set('El modelo es requerido.'); return; }
-    if (!this.form.annio || this.form.annio < 1901) { this.errorForm.set('El anno es invalido.'); return; }
+    if (!this.form.annio || this.form.annio < 1901) { this.errorForm.set('El año es invalido.'); return; }
     if (!this.form.repuestoDecripcion.trim()) { this.errorForm.set('La descripcion es requerida.'); return; }
     if (!this.form.repuestera.trim())         { this.errorForm.set('La repuestera es requerida.'); return; }
     if (!this.form.fechaCompra)               { this.errorForm.set('La fecha de compra es requerida.'); return; }

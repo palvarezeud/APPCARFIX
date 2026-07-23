@@ -5,14 +5,20 @@ import { ClientesService } from '../../services/clientes.service';
 import { VehiculosService, VehiculoRequest } from '../../services/vehiculos.service';
 import { OrdenesService } from '../../services/ordenes.service';
 import { FacturasService } from '../../services/facturas.service';
+import { ReparacionesService } from '../../services/reparaciones.service';
+import { RepuestosService } from '../../services/repuestos.service';
 import { CrearClienteRequest } from '../../models/cliente.model';
-import { ClienteVozDto, VehiculoVozDto, OrdenVozDto } from '../../models/interpretacion-voz.model';
+import {
+  ClienteVozDto, VehiculoVozDto, OrdenVozDto, FacturaVozDto, ReparacionVozDto, RepuestoVozDto
+} from '../../models/interpretacion-voz.model';
 import { MensajeChat, PasoChat, FaseChat } from './chat-taller.model';
 import { clasificarRespuesta } from './interprete-confirmacion.util';
 
-type BorradorCliente = Partial<CrearClienteRequest>;
-type BorradorVehiculo = Partial<Omit<VehiculoRequest, 'clienteId'>>;
-type BorradorOrden = { problemaGeneral: string; esGarantia: boolean };
+type BorradorCliente    = Partial<CrearClienteRequest>;
+type BorradorVehiculo   = Partial<Omit<VehiculoRequest, 'clienteId'>>;
+type BorradorOrden      = { problemaGeneral: string; esGarantia: boolean };
+type BorradorReparacion = { descripcionReparacion: string; costo: number; duracionAproximadaHoras?: number };
+type BorradorRepuesto   = { nombreRepuesto: string; costo: number; repuestera: string; numeroFactura?: string };
 
 const DIAS_PLAZO_ORDEN = 3;
 
@@ -24,6 +30,8 @@ export class ChatTallerService {
   private readonly vehiculosSvc      = inject(VehiculosService);
   private readonly ordenesSvc        = inject(OrdenesService);
   private readonly facturasSvc       = inject(FacturasService);
+  private readonly reparacionesSvc   = inject(ReparacionesService);
+  private readonly repuestosSvc      = inject(RepuestosService);
 
   readonly soportado = this.reconocimientoVoz.soportado;
 
@@ -40,9 +48,11 @@ export class ChatTallerService {
   readonly nombreClienteSesion = signal<string | null>(null);
   readonly emailClienteSesion  = signal<string | null>(null);
 
-  private borradorCliente:  BorradorCliente  | null = null;
-  private borradorVehiculo: BorradorVehiculo | null = null;
-  private borradorOrden:    BorradorOrden    | null = null;
+  private borradorCliente:    BorradorCliente    | null = null;
+  private borradorVehiculo:   BorradorVehiculo   | null = null;
+  private borradorOrden:      BorradorOrden      | null = null;
+  private borradorReparacion: BorradorReparacion | null = null;
+  private borradorRepuesto:   BorradorRepuesto   | null = null;
 
   escucharTurno(): void {
     if (this.escuchando() || this.procesando()) return;
@@ -93,8 +103,14 @@ export class ChatTallerService {
             if (resultado.orden) { this.iniciarPasoOrden(resultado.orden); return; }
             break;
           case 'enviar_factura':
-            this.iniciarPasoFactura();
+            this.iniciarPasoFactura(resultado.factura);
             return;
+          case 'agregar_reparacion':
+            if (resultado.reparacion) { this.iniciarPasoReparacion(resultado.reparacion); return; }
+            break;
+          case 'agregar_repuesto':
+            if (resultado.repuesto) { this.iniciarPasoRepuesto(resultado.repuesto); return; }
+            break;
         }
 
         this.agregarMensaje(
@@ -191,7 +207,7 @@ export class ChatTallerService {
     };
 
     if (!this.borradorVehiculo.marca || !this.borradorVehiculo.modelo || !this.borradorVehiculo.annio) {
-      this.agregarMensaje('asistente', 'Necesito al menos marca, modelo y annio del vehiculo.', false);
+      this.agregarMensaje('asistente', 'Necesito al menos marca, modelo y año del vehiculo.', false);
       return;
     }
 
@@ -220,7 +236,7 @@ export class ChatTallerService {
   }
 
   private resumenVehiculo(b: BorradorVehiculo): string {
-    const partes = [`${b.marca} ${b.modelo}`, `annio ${b.annio}`];
+    const partes = [`${b.marca} ${b.modelo}`, `año ${b.annio}`];
     if (b.placa) partes.push(`placa ${b.placa}`);
     return `Entendi: vehiculo ${partes.join(', ')}. ¿Confirmo?`;
   }
@@ -342,7 +358,14 @@ export class ChatTallerService {
 
   // ── Paso Factura ─────────────────────────────────────────────────────
 
-  private iniciarPasoFactura(): void {
+  private iniciarPasoFactura(datos: FacturaVozDto | null): void {
+    const criterio = datos?.placaBuscada || datos?.nombreClienteBuscado;
+
+    if (criterio) {
+      this.resolverFacturaPorCriterio(criterio);
+      return;
+    }
+
     if (!this.facturaIdCreada()) {
       this.agregarMensaje('asistente', 'Todavia no hay ninguna factura creada en esta conversacion.', false);
       return;
@@ -350,6 +373,33 @@ export class ChatTallerService {
     this.pasoActual.set('factura');
     this.fase.set('confirmando');
     this.agregarMensaje('asistente', '¿Confirmo el envio de la factura por correo?', false);
+  }
+
+  private resolverFacturaPorCriterio(criterio: string): void {
+    this.facturasSvc.obtener(criterio).subscribe({
+      next: facturas => {
+        if (facturas.length === 1) {
+          const f = facturas[0];
+          this.facturaIdCreada.set(f.facturaId);
+          this.nombreClienteSesion.set(f.nombreCliente);
+          this.emailClienteSesion.set(f.emailCliente);
+          this.pasoActual.set('factura');
+          this.fase.set('confirmando');
+          this.agregarMensaje(
+            'asistente',
+            `Encontre la factura #${f.facturaId} de ${f.nombreCliente} (${f.placa}). ¿Confirmo el envio por correo?`,
+            false);
+        } else if (facturas.length === 0) {
+          this.agregarMensaje('asistente', `No encontre ninguna factura para "${criterio}".`, false);
+        } else {
+          this.agregarMensaje(
+            'asistente',
+            `Encontre varias facturas para "${criterio}". Sea mas especifico, por ejemplo mencionando la placa.`,
+            false);
+        }
+      },
+      error: () => this.agregarMensaje('asistente', 'No se pudo buscar la factura.', true)
+    });
   }
 
   private confirmarFactura(): void {
@@ -367,6 +417,127 @@ export class ChatTallerService {
     });
   }
 
+  // ── Paso Reparacion ──────────────────────────────────────────────────
+
+  private iniciarPasoReparacion(datos: ReparacionVozDto): void {
+    if (!this.facturaIdCreada()) {
+      this.agregarMensaje(
+        'asistente',
+        'Primero necesito una factura activa (cree una orden o busque una factura existente).',
+        false);
+      return;
+    }
+
+    if (!datos.descripcionReparacion || datos.costo == null) {
+      this.agregarMensaje('asistente', 'Necesito al menos la descripcion y el costo de la reparacion.', false);
+      return;
+    }
+
+    this.borradorReparacion = {
+      descripcionReparacion:   datos.descripcionReparacion,
+      costo:                   datos.costo,
+      duracionAproximadaHoras: datos.duracionAproximadaHoras ?? undefined
+    };
+
+    this.pasoActual.set('reparacion');
+    this.fase.set('confirmando');
+    this.agregarMensaje('asistente', this.resumenReparacion(this.borradorReparacion), false);
+  }
+
+  private resumenReparacion(b: BorradorReparacion): string {
+    const partes = [`reparacion "${b.descripcionReparacion}"`, `costo ${b.costo}`];
+    if (b.duracionAproximadaHoras) partes.push(`${b.duracionAproximadaHoras} horas`);
+    return `Entendi: ${partes.join(', ')}. ¿Confirmo?`;
+  }
+
+  private confirmarReparacion(): void {
+    const b = this.borradorReparacion;
+    const facturaId = this.facturaIdCreada();
+    if (!b || !facturaId) return;
+
+    this.fase.set('ejecutando');
+    this.reparacionesSvc.agregar({
+      facturaId,
+      descripcionReparacion:   b.descripcionReparacion,
+      costo:                   b.costo,
+      duracionAproximadaHoras: b.duracionAproximadaHoras
+    }).subscribe({
+      next: () => {
+        this.agregarMensaje(
+          'asistente',
+          `Reparacion "${b.descripcionReparacion}" agregada a la factura. Cuando quiera, digame la siguiente accion.`,
+          false);
+        this.borradorReparacion = null;
+        this.pasoActual.set(null);
+        this.fase.set('inicio');
+      },
+      error: err => this.manejarErrorEjecucion(err, 'reparacion')
+    });
+  }
+
+  // ── Paso Repuesto ────────────────────────────────────────────────────
+
+  private iniciarPasoRepuesto(datos: RepuestoVozDto): void {
+    if (!this.facturaIdCreada()) {
+      this.agregarMensaje(
+        'asistente',
+        'Primero necesito una factura activa (cree una orden o busque una factura existente).',
+        false);
+      return;
+    }
+
+    if (!datos.nombreRepuesto || datos.costo == null || !datos.repuestera) {
+      this.agregarMensaje(
+        'asistente',
+        'Necesito al menos el nombre, el costo y la repuestera donde se compro el repuesto.',
+        false);
+      return;
+    }
+
+    this.borradorRepuesto = {
+      nombreRepuesto: datos.nombreRepuesto,
+      costo:          datos.costo,
+      repuestera:     datos.repuestera,
+      numeroFactura:  datos.numeroFactura ?? undefined
+    };
+
+    this.pasoActual.set('repuesto');
+    this.fase.set('confirmando');
+    this.agregarMensaje('asistente', this.resumenRepuesto(this.borradorRepuesto), false);
+  }
+
+  private resumenRepuesto(b: BorradorRepuesto): string {
+    const partes = [`repuesto "${b.nombreRepuesto}"`, `costo ${b.costo}`, `comprado en ${b.repuestera}`];
+    return `Entendi: ${partes.join(', ')}. ¿Confirmo?`;
+  }
+
+  private confirmarRepuesto(): void {
+    const b = this.borradorRepuesto;
+    const facturaId = this.facturaIdCreada();
+    if (!b || !facturaId) return;
+
+    this.fase.set('ejecutando');
+    this.repuestosSvc.agregar({
+      facturaId,
+      nombreRepuesto: b.nombreRepuesto,
+      costo:          b.costo,
+      fecha:          new Date().toISOString(),
+      repuestera:     b.repuestera,
+      numeroFactura:  b.numeroFactura
+    }).subscribe({
+      next: () => {
+        this.agregarMensaje(
+          'asistente',
+          `Repuesto "${b.nombreRepuesto}" agregado a la factura. Cuando quiera, digame la siguiente accion.`,
+          false);
+        this.borradorRepuesto = null;
+        this.pasoActual.set(null);
+        this.fase.set('inicio');
+      },
+      error: err => this.manejarErrorEjecucion(err, 'repuesto')
+    });
+  }
+
   // ── Confirmacion / correccion / cancelacion ─────────────────────────
 
   private manejarRespuestaConfirmacion(texto: string): void {
@@ -374,10 +545,12 @@ export class ChatTallerService {
 
     if (clasificacion === 'afirmativo') {
       switch (this.pasoActual()) {
-        case 'cliente':  this.confirmarCliente();  break;
-        case 'vehiculo': this.confirmarVehiculo(); break;
-        case 'orden':    this.confirmarOrden();    break;
-        case 'factura':  this.confirmarFactura();  break;
+        case 'cliente':    this.confirmarCliente();    break;
+        case 'vehiculo':   this.confirmarVehiculo();   break;
+        case 'orden':      this.confirmarOrden();      break;
+        case 'factura':    this.confirmarFactura();    break;
+        case 'reparacion': this.confirmarReparacion(); break;
+        case 'repuesto':   this.confirmarRepuesto();   break;
       }
       return;
     }
@@ -423,6 +596,8 @@ export class ChatTallerService {
     this.borradorCliente = null;
     this.borradorVehiculo = null;
     this.borradorOrden = null;
+    this.borradorReparacion = null;
+    this.borradorRepuesto = null;
     this.pasoActual.set(null);
     this.fase.set('inicio');
   }

@@ -28,6 +28,21 @@ public record OrdenExtraidaVoz(
     bool?   EsGarantia,
     string? PlacaBuscada);
 
+public record FacturaExtraidaVoz(
+    string? NombreClienteBuscado,
+    string? PlacaBuscada);
+
+public record ReparacionExtraidaVoz(
+    string?  DescripcionReparacion,
+    decimal? Costo,
+    int?     DuracionAproximadaHoras);
+
+public record RepuestoExtraidoVoz(
+    string?  NombreRepuesto,
+    decimal? Costo,
+    string?  Repuestera,
+    string?  NumeroFactura);
+
 public record InterpretacionVozResultado(
     bool    EsExitoso,
     string? MensajeError,
@@ -35,18 +50,22 @@ public record InterpretacionVozResultado(
     string? PantallaDestino,
     bool    AbrirFormularioCrear,
     string? TerminoBusqueda,
-    ClienteExtraidoVoz?  Cliente,
-    VehiculoExtraidoVoz? Vehiculo,
-    OrdenExtraidaVoz?    Orden,
+    ClienteExtraidoVoz?    Cliente,
+    VehiculoExtraidoVoz?   Vehiculo,
+    OrdenExtraidaVoz?      Orden,
+    FacturaExtraidaVoz?    Factura,
+    ReparacionExtraidaVoz? Reparacion,
+    RepuestoExtraidoVoz?   Repuesto,
     string? MensajeParaUsuario)
 {
     public static InterpretacionVozResultado Exito(
         string intent, string? pantallaDestino, bool abrirFormularioCrear, string? terminoBusqueda,
         ClienteExtraidoVoz? cliente, VehiculoExtraidoVoz? vehiculo, OrdenExtraidaVoz? orden,
+        FacturaExtraidaVoz? factura, ReparacionExtraidaVoz? reparacion, RepuestoExtraidoVoz? repuesto,
         string? mensajeParaUsuario)
         => new(true, null, intent, pantallaDestino, abrirFormularioCrear, terminoBusqueda,
-               cliente, vehiculo, orden, mensajeParaUsuario);
+               cliente, vehiculo, orden, factura, reparacion, repuesto, mensajeParaUsuario);
 
     public static InterpretacionVozResultado Fallo(string mensajeError)
-        => new(false, mensajeError, null, null, false, null, null, null, null, null);
+        => new(false, mensajeError, null, null, false, null, null, null, null, null, null, null, null);
 }

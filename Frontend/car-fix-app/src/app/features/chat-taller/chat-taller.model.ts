@@ -1,4 +1,4 @@
-export type PasoChat = 'cliente' | 'vehiculo' | 'orden' | 'factura';
+export type PasoChat = 'cliente' | 'vehiculo' | 'orden' | 'factura' | 'reparacion' | 'repuesto';
 export type FaseChat = 'inicio' | 'confirmando' | 'ejecutando' | 'terminado';
 
 export interface MensajeChat {

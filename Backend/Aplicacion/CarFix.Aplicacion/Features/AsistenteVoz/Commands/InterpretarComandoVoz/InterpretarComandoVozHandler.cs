@@ -35,6 +35,17 @@ public class InterpretarComandoVozHandler
         var orden = resultado.Orden is null ? null : new OrdenVozDto(
             resultado.Orden.ProblemaGeneral, resultado.Orden.EsGarantia, resultado.Orden.PlacaBuscada);
 
+        var factura = resultado.Factura is null ? null : new FacturaVozDto(
+            resultado.Factura.NombreClienteBuscado, resultado.Factura.PlacaBuscada);
+
+        var reparacion = resultado.Reparacion is null ? null : new ReparacionVozDto(
+            resultado.Reparacion.DescripcionReparacion, resultado.Reparacion.Costo,
+            resultado.Reparacion.DuracionAproximadaHoras);
+
+        var repuesto = resultado.Repuesto is null ? null : new RepuestoVozDto(
+            resultado.Repuesto.NombreRepuesto, resultado.Repuesto.Costo,
+            resultado.Repuesto.Repuestera, resultado.Repuesto.NumeroFactura);
+
         var dto = new InterpretacionVozDto(
             resultado.Intent ?? "desconocido",
             resultado.PantallaDestino,
@@ -43,6 +54,9 @@ public class InterpretarComandoVozHandler
             cliente,
             vehiculo,
             orden,
+            factura,
+            reparacion,
+            repuesto,
             resultado.MensajeParaUsuario);
 
         return Resultado<InterpretacionVozDto>.Exito(dto);

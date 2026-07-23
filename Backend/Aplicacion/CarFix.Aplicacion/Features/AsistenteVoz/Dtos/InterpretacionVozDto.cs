@@ -22,12 +22,30 @@ public record OrdenVozDto(
     bool?   EsGarantia,
     string? PlacaBuscada);
 
+public record FacturaVozDto(
+    string? NombreClienteBuscado,
+    string? PlacaBuscada);
+
+public record ReparacionVozDto(
+    string?  DescripcionReparacion,
+    decimal? Costo,
+    int?     DuracionAproximadaHoras);
+
+public record RepuestoVozDto(
+    string?  NombreRepuesto,
+    decimal? Costo,
+    string?  Repuestera,
+    string?  NumeroFactura);
+
 public record InterpretacionVozDto(
     string  Intent,
     string? PantallaDestino,
     bool    AbrirFormularioCrear,
     string? TerminoBusqueda,
-    ClienteVozDto?  Cliente,
-    VehiculoVozDto? Vehiculo,
-    OrdenVozDto?    Orden,
+    ClienteVozDto?    Cliente,
+    VehiculoVozDto?   Vehiculo,
+    OrdenVozDto?      Orden,
+    FacturaVozDto?    Factura,
+    ReparacionVozDto? Reparacion,
+    RepuestoVozDto?   Repuesto,
     string? MensajeParaUsuario);

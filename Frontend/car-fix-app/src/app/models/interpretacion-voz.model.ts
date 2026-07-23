@@ -23,13 +23,34 @@ export interface OrdenVozDto {
   placaBuscada:    string  | null;
 }
 
+export interface FacturaVozDto {
+  nombreClienteBuscado: string | null;
+  placaBuscada:         string | null;
+}
+
+export interface ReparacionVozDto {
+  descripcionReparacion:   string  | null;
+  costo:                   number  | null;
+  duracionAproximadaHoras: number  | null;
+}
+
+export interface RepuestoVozDto {
+  nombreRepuesto: string | null;
+  costo:          number | null;
+  repuestera:     string | null;
+  numeroFactura:  string | null;
+}
+
 export interface InterpretacionVozDto {
   intent:               string;
   pantallaDestino:      string | null;
   abrirFormularioCrear: boolean;
   terminoBusqueda:      string | null;
-  cliente:              ClienteVozDto  | null;
-  vehiculo:             VehiculoVozDto | null;
-  orden:                OrdenVozDto    | null;
+  cliente:              ClienteVozDto    | null;
+  vehiculo:             VehiculoVozDto   | null;
+  orden:                OrdenVozDto      | null;
+  factura:              FacturaVozDto    | null;
+  reparacion:           ReparacionVozDto | null;
+  repuesto:             RepuestoVozDto   | null;
   mensajeParaUsuario:   string | null;
 }

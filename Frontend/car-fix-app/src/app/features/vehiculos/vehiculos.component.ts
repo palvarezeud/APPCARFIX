@@ -486,7 +486,7 @@ export class VehiculosComponent implements OnInit, OnDestroy {
     if (!this.marca().trim())                { this.errorForm.set('La marca es requerida.'); return; }
     if (!this.modelo().trim())               { this.errorForm.set('El modelo es requerido.'); return; }
     if (!annioNumero || annioNumero < 1900 || annioNumero > 2100)
-      { this.errorForm.set('El anno debe estar entre 1900 y 2100.'); return; }
+      { this.errorForm.set('El año debe estar entre 1900 y 2100.'); return; }
     if (!this.form.detallesCarroceria.trim()) { this.errorForm.set('Los detalles de carroceria son requeridos.'); return; }
 
     this.guardando.set(true);
