@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Test WebAuthn - CarFix</title>
+<style>
+  body { font-family: system-ui, sans-serif; padding: 24px; background: #111; color: #eee; }
+  button { font-size: 20px; padding: 16px 24px; width: 100%; margin-bottom: 16px; border-radius: 8px; border: none; background: #2563eb; color: white; }
+  pre { white-space: pre-wrap; word-break: break-word; background: #222; padding: 12px; border-radius: 8px; font-size: 14px; }
+  .ok { color: #4ade80; }
+  .fail { color: #f87171; }
+</style>
+</head>
+<body>
+  <h2>Spike WebAuthn - CarFix</h2>
+  <p>Origen actual: <code id="origen"></code></p>
+  <button id="btnCrear">1. Crear credencial (huella/rostro)</button>
+  <button id="btnLeer">2. Leer credencial (desbloquear)</button>
+  <pre id="resultado">Esperando...</pre>
+
+  <script>
+    document.getElementById('origen').textContent = location.origin;
+    const out = document.getElementById('resultado');
+    let credentialIdGuardado = null;
+
+    function log(msg, ok) {
+      out.textContent = msg;
+      out.className = ok === true ? 'ok' : ok === false ? 'fail' : '';
+    }
+
+    function bufferToBase64(buf) {
+      return btoa(String.fromCharCode(...new Uint8Array(buf)));
+    }
+
+    document.getElementById('btnCrear').addEventListener('click', async () => {
+      if (!window.PublicKeyCredential) {
+        log('PublicKeyCredential no existe en este navegador.', false);
+        return;
+      }
+      try {
+        const disponible = await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
+        log('Autenticador de plataforma disponible: ' + disponible + '\nCreando credencial...');
+        if (!disponible) return;
+
+        const challenge = crypto.getRandomValues(new Uint8Array(32));
+        const userId = crypto.getRandomValues(new Uint8Array(16));
+
+        const cred = await navigator.credentials.create({
+          publicKey: {
+            challenge,
+            rp: { name: 'CarFix Dev Spike' },
+            user: { id: userId, name: 'spike-test', displayName: 'Spike Test' },
+            pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }],
+            authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required' },
+            timeout: 60000,
+          }
+        });
+
+        credentialIdGuardado = cred.id;
+        log('EXITO creando credencial.\nrp.id efectivo: ' + location.hostname + '\ncredential.id: ' + cred.id, true);
+      } catch (err) {
+        log('FALLO creando credencial.\nNombre: ' + err.name + '\nMensaje: ' + err.message, false);
+      }
+    });
+
+    document.getElementById('btnLeer').addEventListener('click', async () => {
+      if (!credentialIdGuardado) {
+        log('Primero crea una credencial con el boton 1.', false);
+        return;
+      }
+      try {
+        const challenge = crypto.getRandomValues(new Uint8Array(32));
+        const assertion = await navigator.credentials.get({
+          publicKey: {
+            challenge,
+            userVerification: 'required',
+            timeout: 60000,
+          }
+        });
+        log('EXITO leyendo credencial (gesto biometrico aceptado).\nid: ' + assertion.id, true);
+      } catch (err) {
+        log('FALLO leyendo credencial.\nNombre: ' + err.name + '\nMensaje: ' + err.message, false);
+      }
+    });
+  </script>
+</body>
+</html>
