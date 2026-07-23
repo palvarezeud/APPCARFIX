@@ -362,7 +362,15 @@ tbody td { padding: 10px 14px; font-size: 13px; }
 }
 .btn-login:hover { opacity: .9; }
 .btn-login:disabled { opacity: .5; cursor: not-allowed; }
-.login-separador { text-align: center; font-size: 12px; color: var(--color-texto-suave); margin: 14px 0; }
+.login-acciones { display: flex; gap: 8px; align-items: stretch; }
+.login-acciones .btn-login { flex: 1; margin-top: 0; }
+.btn-biometria {
+  flex-shrink: 0; width: 48px; font-size: 22px; line-height: 1;
+  background: #fff; border: 1px solid var(--color-borde); border-radius: var(--radio-borde);
+  cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background .15s;
+}
+.btn-biometria:hover { background: var(--color-fondo); }
+.btn-biometria:disabled { opacity: .5; cursor: not-allowed; }
 
 /* ── SIN ACCESO ── */
 .sin-acceso { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 60vh; text-align: center; gap: 12px; }

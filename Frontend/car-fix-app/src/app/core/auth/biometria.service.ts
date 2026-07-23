@@ -135,14 +135,6 @@ export class BiometriaService {
     this._nombreUsuarioHabilitado.set(null);
   }
 
-  async revocarYDeshabilitar(): Promise<void> {
-    const registro = await this.leerRegistro();
-    if (registro) {
-      this.autenticacionSvc.cerrarSesion(registro.tokenRefresco).subscribe({ error: () => {} });
-    }
-    await this.deshabilitar();
-  }
-
   private abrirDb(): Promise<IDBDatabase> {
     return new Promise((resolve, reject) => {
       const peticion = indexedDB.open(DB_NOMBRE, DB_VERSION);

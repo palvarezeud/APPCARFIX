@@ -34,14 +34,6 @@ const CLAVE_PROMPT_CERRADO = 'biometria-prompt-cerrado';
           </div>
         } @else {
 
-          @if (mostrarBotonBiometrico()) {
-            <button class="btn-login" [disabled]="cargando()" (click)="ingresarConBiometria()">
-              @if (cargando()) { <span class="spinner"></span> Verificando... }
-              @else             { Ingresar con huella/rostro }
-            </button>
-            <p class="login-separador">o con tu contraseña</p>
-          }
-
           <div class="form-grupo">
             <label for="usuario">Usuario</label>
             <input id="usuario" type="text" [(ngModel)]="nombreUsuario"
@@ -56,10 +48,20 @@ const CLAVE_PROMPT_CERRADO = 'biometria-prompt-cerrado';
                    (keyup.enter)="iniciarSesion()">
           </div>
 
-          <button class="btn-login" [disabled]="cargando()" (click)="iniciarSesion()">
-            @if (cargando()) { <span class="spinner"></span> Verificando... }
-            @else             { Ingresar }
-          </button>
+          <div class="login-acciones">
+            <button class="btn-login" [disabled]="cargando()" (click)="iniciarSesion()">
+              @if (cargando()) { <span class="spinner"></span> Verificando... }
+              @else             { Ingresar }
+            </button>
+            @if (mostrarBotonBiometrico()) {
+              <button type="button" class="btn-biometria" [disabled]="cargando()"
+                      (click)="ingresarConBiometria()"
+                      title="Ingresar con huella/rostro"
+                      aria-label="Ingresar con huella o reconocimiento facial">
+                🫆
+              </button>
+            }
+          </div>
         }
       </div>
     </div>
