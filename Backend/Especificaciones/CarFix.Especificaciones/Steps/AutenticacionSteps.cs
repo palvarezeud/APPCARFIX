@@ -1,5 +1,7 @@
 using CarFix.Aplicacion.Comun;
 using CarFix.Aplicacion.Features.Autenticacion.Commands.IniciarSesion;
+using CarFix.Aplicacion.Features.Autenticacion.Commands.RefrescarSesion;
+using CarFix.Aplicacion.Features.Autenticacion.Commands.RevocarSesion;
 using CarFix.Dominio.Entidades;
 using CarFix.Dominio.Interfaces;
 using CarFix.Infraestructura.Persistencia;
@@ -14,17 +16,22 @@ public class AutenticacionSteps
     private readonly ISender              _sender;
     private readonly CarFixDbContext      _contexto;
     private readonly IServicioContrasenna _servicioContrasenna;
+    private readonly IServicioHashToken   _servicioHashToken;
 
     private Resultado<RespuestaTokenDto>? _ultimoResultado;
+    private string? _tokenRefrescoActual;
+    private string? _tokenRefrescoAnterior;
 
     public AutenticacionSteps(
         ISender              sender,
         CarFixDbContext      contexto,
-        IServicioContrasenna servicioContrasenna)
+        IServicioContrasenna servicioContrasenna,
+        IServicioHashToken   servicioHashToken)
     {
         _sender              = sender;
         _contexto            = contexto;
         _servicioContrasenna = servicioContrasenna;
+        _servicioHashToken   = servicioHashToken;
     }
 
     [Given(@"que existe un rol ""(.*)"" con ID (\d+)")]
@@ -64,6 +71,38 @@ public class AutenticacionSteps
     public async Task CuandoIniciaSesion(string nombreUsuario, string password)
     {
         _ultimoResultado = await _sender.Send(new IniciarSesionCommand(nombreUsuario, password));
+        if (_ultimoResultado.EsExitoso)
+            _tokenRefrescoActual = _ultimoResultado.Valor!.TokenRefresco;
+    }
+
+    [When(@"el usuario refresca la sesion con el token de refresco recibido")]
+    public async Task CuandoRefrescaConTokenRecibido()
+    {
+        _tokenRefrescoAnterior = _tokenRefrescoActual;
+        _ultimoResultado = await _sender.Send(new RefrescarSesionCommand(_tokenRefrescoActual!));
+        if (_ultimoResultado.EsExitoso)
+            _tokenRefrescoActual = _ultimoResultado.Valor!.TokenRefresco;
+    }
+
+    [When(@"el usuario refresca la sesion con el token de refresco anterior")]
+    public async Task CuandoRefrescaConTokenAnterior()
+    {
+        _ultimoResultado = await _sender.Send(new RefrescarSesionCommand(_tokenRefrescoAnterior!));
+    }
+
+    [When(@"el token de refresco recibido esta vencido")]
+    public void CuandoTokenRecibidoEstaVencido()
+    {
+        var hash  = _servicioHashToken.Hashear(_tokenRefrescoActual!);
+        var token = _contexto.TokenRefrescos.First(t => t.TokenHash == hash);
+        token.FechaExpiracion = DateTime.UtcNow.AddDays(-1);
+        _contexto.SaveChanges();
+    }
+
+    [When(@"el usuario cierra sesion")]
+    public async Task CuandoCierraSesion()
+    {
+        await _sender.Send(new RevocarSesionCommand(_tokenRefrescoActual!));
     }
 
     [Then(@"recibe un token JWT valido")]
@@ -80,5 +119,12 @@ public class AutenticacionSteps
         Assert.That(_ultimoResultado!.EsExitoso, Is.False,
             "Se esperaba fallo pero la operacion fue exitosa.");
         Assert.That(_ultimoResultado.Error, Is.EqualTo(mensajeEsperado));
+    }
+
+    [Then(@"el token de refresco recibido es distinto al anterior")]
+    public void EntoncesTokenRefrescoDistinto()
+    {
+        Assert.That(_tokenRefrescoActual, Is.Not.Null.And.Not.Empty);
+        Assert.That(_tokenRefrescoActual, Is.Not.EqualTo(_tokenRefrescoAnterior));
     }
 }

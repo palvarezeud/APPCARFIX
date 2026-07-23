@@ -17,6 +17,7 @@ public interface ICarFixDbContext
     DbSet<EstadoFactura>       EstadoFacturas       { get; }
     DbSet<Role>                Roles                { get; }
     DbSet<Usuario>             Usuarios             { get; }
+    DbSet<TokenRefresco>       TokenRefrescos       { get; }
     DbSet<Taller>              Tallers              { get; }
     DbSet<MarcaModelo>         MarcaModelos         { get; }
     DbSet<Parametro>           Parametros           { get; }

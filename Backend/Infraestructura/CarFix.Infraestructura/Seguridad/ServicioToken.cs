@@ -13,10 +13,11 @@ public class ServicioToken : IServicioToken
 
     public ServicioToken(IConfiguration config) => _config = config;
 
-    public string GenerarToken(int usuarioId, string nombreUsuario, string rol)
+    public (string Token, DateTime Expiracion) GenerarToken(int usuarioId, string nombreUsuario, string rol)
     {
         var llave        = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_config["Jwt:Llave"]!));
         var credenciales = new SigningCredentials(llave, SecurityAlgorithms.HmacSha256);
+        var expiracion   = DateTime.UtcNow.AddMinutes(double.Parse(_config["Jwt:ExpiracionMinutos"]!));
 
         var reclamaciones = new[]
         {
@@ -29,10 +30,10 @@ public class ServicioToken : IServicioToken
             issuer:             _config["Jwt:Emisor"],
             audience:           _config["Jwt:Audiencia"],
             claims:             reclamaciones,
-            expires:            DateTime.UtcNow.AddMinutes(double.Parse(_config["Jwt:ExpiracionMinutos"]!)),
+            expires:            expiracion,
             signingCredentials: credenciales
         );
 
-        return new JwtSecurityTokenHandler().WriteToken(token);
+        return (new JwtSecurityTokenHandler().WriteToken(token), expiracion);
     }
 }

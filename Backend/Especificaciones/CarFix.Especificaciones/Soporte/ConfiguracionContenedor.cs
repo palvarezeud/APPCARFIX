@@ -26,9 +26,11 @@ public class ConfiguracionContenedor
         servicios.AddScoped<IRepositorioVehiculo,      RepositorioVehiculo>();
         servicios.AddScoped<IRepositorioOrdenServicio, RepositorioOrdenServicio>();
         servicios.AddScoped<IRepositorioFactura,       RepositorioFactura>();
+        servicios.AddScoped<IRepositorioTokenRefresco, RepositorioTokenRefresco>();
 
         servicios.AddScoped<IServicioContrasenna, ServicioContrasenna>();
         servicios.AddScoped<IServicioToken,       ServicioTokenFalso>();
+        servicios.AddScoped<IServicioHashToken,   ServicioHashToken>();
 
         servicios.AddLogging();
         servicios.AddScoped<ContextoEscenario>();

@@ -31,9 +31,11 @@ public static class InjeccionDependencias
         services.AddScoped<IRepositorioOrdenServicio, RepositorioOrdenServicio>();
         services.AddScoped<IRepositorioFactura,       RepositorioFactura>();
         services.AddScoped<IRepositorioUsuario,       RepositorioUsuario>();
+        services.AddScoped<IRepositorioTokenRefresco, RepositorioTokenRefresco>();
 
         services.AddScoped<IServicioToken,       ServicioToken>();
         services.AddScoped<IServicioContrasenna, ServicioContrasenna>();
+        services.AddScoped<IServicioHashToken,   ServicioHashToken>();
 
         services.AddSingleton(sp =>
         {

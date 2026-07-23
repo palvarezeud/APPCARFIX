@@ -1,12 +1,14 @@
 import { Injectable, computed, signal, inject } from '@angular/core';
 import { Router } from '@angular/router';
+import { BiometriaService } from './biometria.service';
 
 const ROL_CLAIM = 'http://schemas.microsoft.com/ws/2008/06/identity/claims/role';
 const TOKEN_KEY = 'carfix_token';
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
-  private readonly router = inject(Router);
+  private readonly router     = inject(Router);
+  private readonly biometria  = inject(BiometriaService);
 
   private readonly _token = signal<string | null>(localStorage.getItem(TOKEN_KEY));
   private readonly _rol   = signal<string | null>(this.extraerRol(localStorage.getItem(TOKEN_KEY)));
@@ -28,6 +30,7 @@ export class AuthService {
   }
 
   cerrarSesion(): void {
+    this.biometria.revocarYDeshabilitar();
     localStorage.removeItem(TOKEN_KEY);
     this._token.set(null);
     this._rol.set(null);

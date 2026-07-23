@@ -38,6 +38,8 @@ public partial class CarFixDbContext : DbContext
 
     public virtual DbSet<TipoReparacion> TipoReparacions { get; set; }
 
+    public virtual DbSet<TokenRefresco> TokenRefrescos { get; set; }
+
     public virtual DbSet<Usuario> Usuarios { get; set; }
 
     public virtual DbSet<Vehiculo> Vehiculos { get; set; }
@@ -399,6 +401,47 @@ public partial class CarFixDbContext : DbContext
                 .IsUnicode(false)
                 .HasComment("Describe la reparación a realizar");
             entity.Property(e => e.DuracionAproximadaHoras).HasComment("Detalla cuánto aproximadamente se tarda en horas");
+        });
+
+        modelBuilder.Entity<TokenRefresco>(entity =>
+        {
+            entity.ToTable("TokenRefresco", "Sistema", tb => tb.HasComment("Refresh tokens para re-login silencioso (desbloqueo biometrico local)"));
+
+            entity.HasIndex(e => e.TokenHash, "UQ_TokenRefresco_TokenHash").IsUnique();
+            entity.HasIndex(e => e.UsuarioId, "IX_TokenRefresco_UsuarioID");
+
+            entity.Property(e => e.TokenRefrescoId)
+                .HasComment("Identificador unico del token de refresco")
+                .HasColumnName("TokenRefrescoID");
+            entity.Property(e => e.UsuarioId)
+                .HasComment("Usuario propietario del token")
+                .HasColumnName("UsuarioID");
+            entity.Property(e => e.TokenHash)
+                .HasMaxLength(100)
+                .IsUnicode(false)
+                .HasComment("Hash SHA-256 del token de refresco (nunca se guarda en texto plano)");
+            entity.Property(e => e.IdentificadorDispositivo)
+                .HasMaxLength(200)
+                .IsUnicode(false)
+                .HasComment("Etiqueta opcional del dispositivo/cliente");
+            entity.Property(e => e.FechaCreacion)
+                .HasComment("Fecha de emision del token")
+                .HasColumnType("datetime")
+                .HasDefaultValueSql("(getutcdate())");
+            entity.Property(e => e.FechaExpiracion)
+                .HasComment("Fecha de expiracion del token")
+                .HasColumnType("datetime");
+            entity.Property(e => e.Revocado)
+                .HasComment("Indica si el token ya fue revocado o rotado")
+                .HasDefaultValue(false);
+            entity.Property(e => e.FechaRevocado)
+                .HasComment("Fecha en que el token fue revocado")
+                .HasColumnType("datetime");
+
+            entity.HasOne(d => d.Usuario).WithMany(p => p.TokenRefrescos)
+                .HasForeignKey(d => d.UsuarioId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_TokenRefresco_Usuarios");
         });
 
         modelBuilder.Entity<Usuario>(entity =>

@@ -20,5 +20,7 @@ public partial class Usuario
     public int RolId { get; set; }
 
     public virtual Role Rol { get; set; } = null!;
+
+    public virtual ICollection<TokenRefresco> TokenRefrescos { get; set; } = new List<TokenRefresco>();
 }
 
