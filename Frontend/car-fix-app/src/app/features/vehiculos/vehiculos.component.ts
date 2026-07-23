@@ -60,6 +60,7 @@ type Modo = 'ver' | 'crear' | 'editar';
     </div>
 
     @if (error()) { <div class="alerta alerta-error">{{ error() }}</div> }
+    @if (mensajeExito()) { <div class="alerta alerta-exito">{{ mensajeExito() }}</div> }
 
     @if (cargando()) {
       <div class="cargando"><span class="spinner"></span> Cargando...</div>
@@ -216,6 +217,7 @@ export class VehiculosComponent implements OnInit, OnDestroy {
   guardando         = signal(false);
   error             = signal<string | null>(null);
   errorForm         = signal<string | null>(null);
+  mensajeExito      = signal<string | null>(null);
   private todos     = signal<VehiculoDto[]>([]);
   clientes          = signal<ClienteDto[]>([]);
   textoBusqueda     = signal('');
@@ -379,6 +381,7 @@ export class VehiculosComponent implements OnInit, OnDestroy {
 
   seleccionar(v: VehiculoDto): void {
     this.error.set(null);
+    this.mensajeExito.set(null);
     this.seleccionado.set(this.seleccionado()?.vehiculoId === v.vehiculoId ? null : v);
   }
 
@@ -390,6 +393,7 @@ export class VehiculosComponent implements OnInit, OnDestroy {
   abrirFormulario(m: Modo): void {
     this.modo.set(m);
     this.errorForm.set(null);
+    this.mensajeExito.set(null);
     this.escaneando.set(false);
     this.mensajeEscaneo.set(null);
     this.errorEscaneo.set(null);
@@ -525,7 +529,12 @@ export class VehiculosComponent implements OnInit, OnDestroy {
     if (!confirm(`¿Eliminar el vehículo ${s.marca} ${s.modelo ?? ''} (${s.placa ?? 'sin placa'})?`)) return;
 
     this.svc.eliminar(s.vehiculoId).subscribe({
-      next:  () => { this.seleccionado.set(null); this.mostrarFormulario.set(false); this.cargar(); },
+      next:  () => {
+        this.seleccionado.set(null);
+        this.mostrarFormulario.set(false);
+        this.mensajeExito.set('Vehículo eliminado correctamente.');
+        this.cargar();
+      },
       error: (err: { error?: string }) => this.error.set(err.error ?? 'No se puede eliminar este vehículo.')
     });
   }

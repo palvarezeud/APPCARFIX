@@ -55,6 +55,9 @@ type Modo = 'ver' | 'crear' | 'editar';
     @if (error()) {
       <div class="alerta alerta-error">{{ error() }}</div>
     }
+    @if (mensajeExito()) {
+      <div class="alerta alerta-exito">{{ mensajeExito() }}</div>
+    }
 
     @if (cargando()) {
       <div class="cargando"><span class="spinner"></span> Cargando...</div>
@@ -148,10 +151,11 @@ export class ClientesComponent implements OnInit, OnDestroy {
   private readonly svc         = inject(ClientesService);
   private readonly asistenteVoz = inject(AsistenteVozService);
 
-  cargando  = signal(false);
-  guardando = signal(false);
-  error     = signal<string | null>(null);
-  errorForm = signal<string | null>(null);
+  cargando     = signal(false);
+  guardando    = signal(false);
+  error        = signal<string | null>(null);
+  errorForm    = signal<string | null>(null);
+  mensajeExito = signal<string | null>(null);
 
   private todos = signal<ClienteDto[]>([]);
   textoBusqueda = signal('');
@@ -235,6 +239,7 @@ export class ClientesComponent implements OnInit, OnDestroy {
 
   seleccionar(c: ClienteDto): void {
     this.error.set(null);
+    this.mensajeExito.set(null);
     this.seleccionado.set(this.seleccionado()?.clienteId === c.clienteId ? null : c);
   }
 
@@ -246,6 +251,7 @@ export class ClientesComponent implements OnInit, OnDestroy {
   abrirFormulario(m: Modo): void {
     this.modo.set(m);
     this.errorForm.set(null);
+    this.mensajeExito.set(null);
     if ((m === 'ver' || m === 'editar') && this.seleccionado()) {
       const s = this.seleccionado()!;
       this.form = { nombreCliente: s.nombreCliente, telefono1: s.telefono1,
@@ -295,7 +301,12 @@ export class ClientesComponent implements OnInit, OnDestroy {
     if (!confirm(`¿Eliminar cliente "${s.nombreCliente}"?`)) return;
 
     this.svc.eliminar(s.clienteId).subscribe({
-      next: () => { this.seleccionado.set(null); this.mostrarFormulario.set(false); this.cargar(); },
+      next: () => {
+        this.seleccionado.set(null);
+        this.mostrarFormulario.set(false);
+        this.mensajeExito.set('Cliente eliminado correctamente.');
+        this.cargar();
+      },
       error: err => this.error.set(err.error ?? 'No se puede eliminar este cliente.')
     });
   }

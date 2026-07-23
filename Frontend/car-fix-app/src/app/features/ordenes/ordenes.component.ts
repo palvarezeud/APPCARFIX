@@ -50,6 +50,7 @@ type ModoFormulario = 'ver' | 'crear' | 'editar';
     </div>
 
     @if (error()) { <div class="alerta alerta-error">{{ error() }}</div> }
+    @if (mensajeExito()) { <div class="alerta alerta-exito">{{ mensajeExito() }}</div> }
 
     @if (cargando()) {
       <div class="cargando"><span class="spinner"></span> Cargando...</div>
@@ -271,6 +272,7 @@ export class OrdenesComponent implements OnInit {
   guardando         = signal(false);
   error             = signal<string | null>(null);
   errorForm         = signal<string | null>(null);
+  mensajeExito      = signal<string | null>(null);
   private todos     = signal<OrdenServicioDto[]>([]);
   vehiculos         = signal<VehiculoDto[]>([]);
   textoBusqueda     = signal('');
@@ -353,6 +355,7 @@ export class OrdenesComponent implements OnInit {
 
   seleccionar(o: OrdenServicioDto): void {
     this.error.set(null);
+    this.mensajeExito.set(null);
     if (this.seleccionado()?.ordenServicioId === o.ordenServicioId) {
       this.seleccionado.set(null);
     } else {
@@ -368,6 +371,7 @@ export class OrdenesComponent implements OnInit {
   abrirFormulario(modo: ModoFormulario): void {
     this.modoFormulario.set(modo);
     this.errorForm.set(null);
+    this.mensajeExito.set(null);
 
     this.mostrarSugerenciasVehiculo.set(false);
 
@@ -555,7 +559,11 @@ export class OrdenesComponent implements OnInit {
     if (!confirm(`¿Eliminar orden #${s.ordenServicioId} (${s.placa} — ${s.marca} ${s.modelo})?`)) return;
 
     this.svc.eliminar(s.ordenServicioId).subscribe({
-      next:  () => { this.seleccionado.set(null); this.cargar(); },
+      next:  () => {
+        this.seleccionado.set(null);
+        this.mensajeExito.set('Orden eliminada correctamente.');
+        this.cargar();
+      },
       error: (err: { error?: string }) => this.error.set(err.error ?? 'No se puede eliminar esta orden.')
     });
   }

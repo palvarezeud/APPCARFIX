@@ -36,6 +36,10 @@ type Modo = 'ver' | 'editar';
     }
   </div>
 
+  @if (mensajeExito()) {
+    <div class="alerta alerta-exito">{{ mensajeExito() }}</div>
+  }
+
   @if (!mostrarFormulario()) {
     <div class="filtros-barra">
       <input class="filtro-input" type="text" placeholder="Buscar por placa, cliente o N° factura..."
@@ -715,6 +719,7 @@ export class FacturasComponent implements OnInit {
   mostrarFormulario = signal(false);
   guardando         = signal(false);
   errorForm         = signal('');
+  mensajeExito      = signal<string | null>(null);
   enviandoFactura   = signal(false);
   abriendoPdf       = signal(false);
 
@@ -850,6 +855,7 @@ export class FacturasComponent implements OnInit {
   }
 
   seleccionar(f: FacturaDto) {
+    this.mensajeExito.set(null);
     if (this.seleccionada()?.facturaId === f.facturaId) {
       this.seleccionada.set(null);
     } else {
@@ -862,6 +868,7 @@ export class FacturasComponent implements OnInit {
     this.modo.set('ver');
     this.mostrarFormulario.set(true);
     this.errorForm.set('');
+    this.mensajeExito.set(null);
     this.reiniciarTabs();
     this.cargarAmbosTabs();
   }
@@ -869,6 +876,7 @@ export class FacturasComponent implements OnInit {
   abrirFormulario(m: 'editar') {
     if (!this.seleccionada()) return;
     this.errorForm.set('');
+    this.mensajeExito.set(null);
     this.guardando.set(false);
 
     const f = this.seleccionada()!;
@@ -940,7 +948,11 @@ export class FacturasComponent implements OnInit {
     }
     if (!confirm(`Eliminar Factura #${f.facturaId}? Esta accion eliminara tambien la orden y el detalle asociado.`)) return;
     this.svc.eliminar(f.facturaId).subscribe({
-      next: () => { this.cerrarFormulario(); this.cargarFacturas(); },
+      next: () => {
+        this.cerrarFormulario();
+        this.mensajeExito.set('Factura eliminada correctamente.');
+        this.cargarFacturas();
+      },
       error: err => alert(this.extraerError(err))
     });
   }
