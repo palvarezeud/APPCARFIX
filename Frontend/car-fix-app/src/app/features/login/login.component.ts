@@ -58,7 +58,15 @@ const CLAVE_PROMPT_CERRADO = 'biometria-prompt-cerrado';
                       (click)="ingresarConBiometria()"
                       title="Ingresar con huella/rostro"
                       aria-label="Ingresar con huella o reconocimiento facial">
-                🫆
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor"
+                     stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M12 11c0 3.5-.5 6.5-2 9" />
+                  <path d="M8.5 20c1-2 1.5-4.5 1.5-7 0-1.1.9-2 2-2s2 .9 2 2c0 .5 0 1-.1 1.5" />
+                  <path d="M5 20c1.5-2.5 2.5-5.5 2.5-9a4.5 4.5 0 0 1 9 0v1" />
+                  <path d="M4 15.5c.7-1.5 1-3.3 1-4.5a7 7 0 0 1 13.9-1.2" />
+                  <path d="M17.5 14.5c.3-1 .5-2.2.5-3.5" />
+                  <path d="M2.5 11a9.5 9.5 0 0 1 15.3-7.5" />
+                </svg>
               </button>
             }
           </div>
