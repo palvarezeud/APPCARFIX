@@ -1,6 +1,6 @@
 # Documentación de Base de Datos — CAR_FIX
 
-> **Servidor:** `localhost\SQL2022` | **Base de datos:** `CAR_FIX` | **Fecha de análisis:** 2026-07-18
+> **Servidor:** `(localdb)\MSSQLLocalDB` | **Base de datos:** `CAR_FIX` | **Fecha de análisis:** 2026-10-20
 
 Sistema de gestión de reparación de vehículos. Permite registrar clientes, sus vehículos, órdenes de reparación, reparaciones individuales, repuestos utilizados y la facturación correspondiente.
 
@@ -18,6 +18,14 @@ Clientes (1) ─────────────────── (N) Vehic
                                        │          └──→ (1) Facturas ──── EstadoFactura (1)
                                        │               FK NO_ACTION/NO_ACTION  FK NO_ACTION/CASCADE
                                        │
+                                       └──→ (N) HojaInspeccion
+                                                  FK NO_ACTION/CASCADE
+                                                  │
+                                                  └──→ (N) HojaInpeccionDetalle ──── HojaInspeccionSeccion (1)
+                                                             │  FK CASCADE/CASCADE      FK NO_ACTION/CASCADE
+                                                             └──→ HojaInspeccionDetalleEstado (1)
+                                                                  FK NO_ACTION/CASCADE
+
                               (N) Facturas
      FK_Facturas_Vehiculos:        │
      NO_ACTION/NO_ACTION           ├── (N) Reparacion
@@ -25,33 +33,40 @@ Clientes (1) ─────────────────── (N) Vehic
                                    └── (N) Repuesto
                                             FK CASCADE/CASCADE
 
-Roles (1) ──────────── (N) Usuarios        (autenticacion — sin FK a tablas de negocio)
-           FK NO_ACTION/CASCADE
+Roles (1) ──────────── (N) Usuarios ──────────── (N) TokenRefresco
+           FK NO_ACTION/CASCADE       FK CASCADE/CASCADE
+           (autenticacion — sin FK a tablas de negocio)
 
 TipoReparacion     (independiente — catalogo de consulta, sin FK a Reparacion)
 Taller             (independiente — configuración del sistema)
 HistoricoRespuesto (independiente — historial de precios de repuestos por vehiculo)
 MarcaModelo        (independiente — catalogo de Marca/Modelo/Annio, sin FK)
-Parametros         (independiente — catalogo generico clave/valor, tabla nueva)
+Parametros         (independiente — catalogo generico clave/valor)
 ```
 
 ### Relaciones principales
 
-| Tabla hija               | FK Column          | Tabla padre                | PK Column          | ON DELETE  | ON UPDATE  |
-|--------------------------|--------------------|----------------------------|--------------------|------------|------------|
-| `Sistema.Facturas`       | `EstadoFacturaID`  | `Catalogo.EstadoFactura`   | `EstadoFacturaID`  | NO ACTION  | CASCADE    |
-| `Sistema.Facturas`       | `VehiculoID`       | `Catalogo.Vehiculos`       | `VehiculoID`       | NO ACTION  | NO ACTION  |
-| `Sistema.OrdenServicio`  | `EstadoOrdenID`    | `Catalogo.EstadoOrden`     | `EstadoOrdenID`    | NO ACTION  | CASCADE    |
-| `Sistema.OrdenServicio`  | `FacturaID`        | `Sistema.Facturas`         | `FacturaID`        | NO ACTION  | NO ACTION  |
-| `Sistema.OrdenServicio`  | `VehiculoID`       | `Catalogo.Vehiculos`       | `VehiculoID`       | CASCADE    | CASCADE    |
-| `Sistema.Reparacion`     | `FacturaID`        | `Sistema.Facturas`         | `FacturaID`        | CASCADE    | CASCADE    |
-| `Sistema.Repuesto`       | `FacturaID`        | `Sistema.Facturas`         | `FacturaID`        | CASCADE    | CASCADE    |
-| `Catalogo.Vehiculos`     | `ClienteID`        | `Catalogo.Clientes`        | `ClienteID`        | CASCADE    | CASCADE    |
-| `Catalogo.Usuarios`      | `RolID`            | `Catalogo.Roles`           | `RolID`            | NO ACTION  | CASCADE    |
+| Tabla hija                        | FK Column                       | Tabla padre                          | PK Column                       | ON DELETE  | ON UPDATE  |
+|------------------------------------|----------------------------------|----------------------------------------|-----------------------------------|------------|------------|
+| `Sistema.Facturas`                 | `EstadoFacturaID`                | `Catalogo.EstadoFactura`               | `EstadoFacturaID`                | NO ACTION  | CASCADE    |
+| `Sistema.Facturas`                 | `VehiculoID`                     | `Catalogo.Vehiculos`                   | `VehiculoID`                     | NO ACTION  | NO ACTION  |
+| `Sistema.HojaInpeccionDetalle`     | `HojaInspeccionDetalleEstadoID`  | `Catalogo.HojaInspeccionDetalleEstado` | `HojaInspeccionDetalleEstadoID`  | NO ACTION  | CASCADE    |
+| `Sistema.HojaInpeccionDetalle`     | `HojaInspeccionID`               | `Sistema.HojaInspeccion`               | `HojaInspeccionID`               | CASCADE    | CASCADE    |
+| `Sistema.HojaInpeccionDetalle`     | `HojaInspeccionSeccionID`        | `Catalogo.HojaInspeccionSeccion`       | `HojaInspeccionSeccionID`        | NO ACTION  | CASCADE    |
+| `Sistema.HojaInspeccion`           | `VehiculoID`                     | `Catalogo.Vehiculos`                   | `VehiculoID`                     | NO ACTION  | CASCADE    |
+| `Sistema.OrdenServicio`            | `EstadoOrdenID`                  | `Catalogo.EstadoOrden`                 | `EstadoOrdenID`                  | NO ACTION  | CASCADE    |
+| `Sistema.OrdenServicio`            | `FacturaID`                      | `Sistema.Facturas`                     | `FacturaID`                      | NO ACTION  | NO ACTION  |
+| `Sistema.OrdenServicio`            | `VehiculoID`                     | `Catalogo.Vehiculos`                   | `VehiculoID`                     | CASCADE    | CASCADE    |
+| `Sistema.Reparacion`               | `FacturaID`                      | `Sistema.Facturas`                     | `FacturaID`                      | CASCADE    | CASCADE    |
+| `Sistema.Repuesto`                 | `FacturaID`                      | `Sistema.Facturas`                     | `FacturaID`                      | CASCADE    | CASCADE    |
+| `Sistema.TokenRefresco`            | `UsuarioID`                      | `Catalogo.Usuarios`                    | `UsuarioID`                      | CASCADE    | CASCADE    |
+| `Catalogo.Vehiculos`               | `ClienteID`                      | `Catalogo.Clientes`                    | `ClienteID`                      | CASCADE    | CASCADE    |
+| `Catalogo.Usuarios`                | `RolID`                          | `Catalogo.Roles`                       | `RolID`                          | NO ACTION  | CASCADE    |
 
 > Todas las relaciones tienen FK constraint enforced en la BD. No existen FK lógicas.
 > Las tablas están distribuidas en dos esquemas: `Catalogo` (maestros y configuración) y `Sistema` (transaccionales).
 > La relación `Reparacion → TipoReparacion` fue eliminada en la BD. `TipoReparacion` sigue usándose como catálogo de consulta desde la aplicación, pero sin FK constraint.
+> **Tablas nuevas desde el último análisis:** `Sistema.TokenRefresco` (tokens de refresco JWT, ligado al login biométrico/WebAuthn agregado recientemente) y el clúster `Sistema.HojaInspeccion` / `Sistema.HojaInpeccionDetalle` / `Catalogo.HojaInspeccionSeccion` / `Catalogo.HojaInspeccionDetalleEstado` (funcionalidad de "hoja de inspección" aún en diseño, sin pantalla ni caso de uso implementado — no descrita en `CLAUDE.md`).
 
 ---
 
@@ -249,13 +264,13 @@ Catálogo de combinaciones Marca/Modelo/Año. Poblada con 752 registros: 47 comb
 | Columna         | Tipo           | Nulo | PK | Identity | Default                   | Descripción                        |
 |-----------------|----------------|------|----|----------|----------------------------|-------------------------------------|
 | `MarcaModeloID` | `int`          | NO   | ✓  | ✓ (1,1)  |                            | Identificador único del registro    |
-| `Marca`         | `varchar(200)` | YES  |    |          | `('Marca del vehiculo')`  | Marca del vehículo                  |
-| `Modelo`        | `varchar(200)` | YES  |    |          |                            | Modelo del vehículo                 |
-| `Annio`         | `int`          | YES  |    |          |                            | Año del vehículo                    |
+| `Marca`         | `varchar(200)` | NO   |    |          | `('Marca del vehiculo')`  | Marca del vehículo                  |
+| `Modelo`        | `varchar(200)` | NO   |    |          |                            | Modelo del vehículo                 |
+| `Annio`         | `int`          | NO   |    |          |                            | Año del vehículo                    |
 
 **Relaciones:** Ninguna. Tabla independiente sin FKs entrantes ni salientes. No referencia a `Catalogo.Vehiculos`.
 
-> **Observaciones:** Ya está ubicada en el esquema `Catalogo`, siguiendo la convención del resto del modelo. Todas sus columnas son nullable, lo cual es inusual para un catálogo (`Marca`, `Modelo` y `Annio` deberían ser probablemente `NOT NULL`). El default `'Marca del vehiculo'` en la columna `Marca` parece un valor de placeholder/documentación dejado por error en lugar de un default real. La tabla no se referencia desde ninguna otra tabla ni está documentada en las pantallas funcionales (sección 5 de `CLAUDE.md`) — su propósito debe confirmarse con el equipo.
+> **Observaciones:** Ya está ubicada en el esquema `Catalogo`, siguiendo la convención del resto del modelo. `Marca`, `Modelo` y `Annio` ya son `NOT NULL`. El default `'Marca del vehiculo'` en la columna `Marca` parece un valor de placeholder/documentación dejado por error en lugar de un default real. La tabla no se referencia desde ninguna otra tabla (sin FK); la aplicación la usa como fuente del autocompletado de Marca/Modelo/Año en la pantalla de Vehículos (sección 5.4 de `CLAUDE.md`).
 
 ---
 
@@ -337,9 +352,30 @@ Usuarios del sistema con credenciales de acceso y rol asignado.
 | `Activo`         | `bit`          | NO   |    |           | `((1))` | `1` = activo, `0` = deshabilitado        |
 | `RolID`          | `int`          | NO   |    |           |         | FK → `Catalogo.Roles.RolID`              |
 
-**Relaciones:** FK a `Catalogo.Roles` (NO ACTION delete, CASCADE update). Sin relaciones directas a tablas de negocio — el vínculo usuario-acción se gestiona en la capa de aplicación.
+**Relaciones:** FK a `Catalogo.Roles` (NO ACTION delete, CASCADE update). `Sistema.TokenRefresco.UsuarioID` la referencia (CASCADE delete/update). Sin relaciones directas a tablas de negocio — el vínculo usuario-acción se gestiona en la capa de aplicación.
 
 > **Observación:** `PasswordHash` almacena el hash generado por BCrypt (incluye salt embebido). Nunca almacenar contraseñas en texto plano. Usar `IServicioContrasenna.Hashear()` al crear o cambiar contraseñas.
+
+---
+
+### `Sistema.TokenRefresco`
+
+Tokens de refresco de sesión (refresh tokens), uno por dispositivo/sesión activa de un usuario. Tabla nueva, no documentada previamente.
+
+| Columna                    | Tipo           | Nulo | PK | Identity  | Default          | Descripción                                             |
+|-----------------------------|----------------|------|----|-----------|-------------------|----------------------------------------------------------|
+| `TokenRefrescoID`           | `int`          | NO   | ✓  | ✓ (1,1)  |                   | Identificador único del token                            |
+| `UsuarioID`                 | `int`          | NO   |    |           |                   | FK → `Catalogo.Usuarios.UsuarioID`                       |
+| `TokenHash`                 | `varchar(100)` | NO   |    |           |                   | Hash del token de refresco (el token en claro no se guarda) |
+| `IdentificadorDispositivo`  | `varchar(200)` | YES  |    |           |                   | Identificador del dispositivo/navegador que solicitó el token (opcional) |
+| `FechaCreacion`             | `datetime`     | NO   |    |           | `(getutcdate())`  | Fecha y hora de emisión del token                        |
+| `FechaExpiracion`           | `datetime`     | NO   |    |           |                   | Fecha y hora en que el token deja de ser válido           |
+| `Revocado`                  | `bit`          | NO   |    |           | `((0))`           | `1` = el token fue invalidado antes de expirar            |
+| `FechaRevocado`             | `datetime`     | YES  |    |           |                   | Fecha y hora de revocación (si aplica)                    |
+
+**Relaciones:** FK a `Catalogo.Usuarios` (CASCADE delete/update).
+
+> **Observación:** No está descrita en `CLAUDE.md` (secciones 8/9 de `angular_buenas_practicas.md` documentan la autenticación JWT solo con `AuthService`/token único). Su forma (hash de token, dispositivo, expiración, revocación) sugiere soporte de refresh-token por dispositivo, probablemente ligado al login biométrico/WebAuthn agregado en commits recientes (`6f05019`, `96e6cea`, `d061cd9`) — confirmar con el equipo si ya hay un `IServicioToken`/endpoint consumiéndola antes de asumir que está en uso.
 
 ---
 
@@ -364,6 +400,69 @@ Catálogo genérico clave/valor para parámetros de configuración del sistema (
 **Relaciones:** Ninguna. Tabla independiente sin FKs entrantes ni salientes.
 
 > **Observación:** Ya alimenta el cálculo de IVA (Facturas) y de `FechaSalida` (Órdenes de Servicio) desde el backend; falta la pantalla "Configuración del sistema" (ver `CLAUDE.md` sección 1, marcada como pendiente) para administrarla desde la UI en vez de por SQL directo. Estructura genérica de texto libre — no hay validación de tipo por parámetro a nivel de BD (ej. `HoraApertura >= HoraCierre` solo se valida en la aplicación al usarlo, no al guardarlo).
+
+---
+
+### `Sistema.HojaInspeccion` / `Sistema.HojaInpeccionDetalle` / `Catalogo.HojaInspeccionSeccion` / `Catalogo.HojaInspeccionDetalleEstado`
+
+> **Funcionalidad en diseño — no implementada.** Este clúster de 4 tablas existe en la BD para una mejora futura ("hoja de inspección" del vehículo) que aún no está terminada de diseñar. No hay pantalla, endpoint ni sección en `CLAUDE.md` que la describa todavía; se documenta aquí solo la forma actual del esquema.
+
+**`Sistema.HojaInspeccion`** — encabezado de una inspección realizada a un vehículo.
+
+| Columna           | Tipo           | Nulo | PK | Identity  | Descripción                          |
+|--------------------|----------------|------|----|-----------|----------------------------------------|
+| `HojaInspeccionID` | `int`          | NO   | ✓  | ✓ (1,1)  | Identificador único de la inspección  |
+| `VehiculoID`       | `int`          | NO   |    |           | FK → `Catalogo.Vehiculos.VehiculoID`  |
+| `Fecha`            | `datetime`     | NO   |    |           | Fecha de la inspección                |
+| `Kilometraje`      | `int`          | NO   |    |           | Kilometraje del vehículo al momento de inspeccionar |
+| `Mecanico`         | `varchar(200)` | NO   |    |           | Nombre del mecánico que realizó la inspección (texto libre, sin FK a `Usuarios`) |
+
+**Relaciones:** FK a `Catalogo.Vehiculos` (NO ACTION delete, CASCADE update). Tiene N `Sistema.HojaInpeccionDetalle`.
+
+**`Sistema.HojaInpeccionDetalle`** — ítems individuales evaluados dentro de una inspección (nombre de tabla con el mismo typo real en BD: falta la `s` de "Inspeccion").
+
+| Columna                          | Tipo           | Nulo | PK | Identity  | Default | Descripción                                             |
+|------------------------------------|----------------|------|----|-----------|---------|------------------------------------------------------------|
+| `HojaInspeccionDetalleID`          | `int`          | NO   | ✓  | ✓ (1,1)  |         | Identificador único del ítem de detalle                    |
+| `HojaInspeccionID`                 | `int`          | NO   |    |           |         | FK → `Sistema.HojaInspeccion.HojaInspeccionID`              |
+| `HojaInspeccionSeccionID`          | `int`          | NO   |    |           |         | FK → `Catalogo.HojaInspeccionSeccion.HojaInspeccionSeccionID` |
+| `Item`                             | `varchar(250)` | NO   |    |           |         | Descripción del punto evaluado                              |
+| `HojaInspeccionDetalleEstadoID`    | `int`          | NO   |    |           | `((0))` | FK → `Catalogo.HojaInspeccionDetalleEstado.HojaInspeccionDetalleEstadoID` |
+| `Notas`                            | `varchar(MAX)` | YES  |    |           |         | Observaciones del mecánico sobre este ítem (opcional)       |
+
+**Relaciones:** FK a `Sistema.HojaInspeccion` (CASCADE delete/update), a `Catalogo.HojaInspeccionSeccion` (NO ACTION delete, CASCADE update) y a `Catalogo.HojaInspeccionDetalleEstado` (NO ACTION delete, CASCADE update).
+
+> **Observación:** El default `((0))` de `HojaInspeccionDetalleEstadoID` no corresponde a ningún `HojaInspeccionDetalleEstadoID` real si el catálogo empieza en 1 — el catálogo `Catalogo.HojaInspeccionDetalleEstado` empieza en 1, así que un INSERT que omita la columna fallaría por la FK. Revisar al terminar de diseñar la funcionalidad.
+
+**`Catalogo.HojaInspeccionSeccion`** — catálogo de secciones/agrupaciones de una inspección.
+
+| Columna                    | Tipo           | Nulo | PK | Identity  | Descripción                    |
+|------------------------------|----------------|------|----|-----------|-----------------------------------|
+| `HojaInspeccionSeccionID`    | `int`          | NO   | ✓  | ✓ (1,1)  | Identificador único de la sección |
+| `DescripcionSeccion`         | `varchar(MAX)` | NO   |    |           | Nombre/descripción de la sección  |
+
+**Relaciones:** `Sistema.HojaInpeccionDetalle.HojaInspeccionSeccionID` la referencia (NO ACTION delete, CASCADE update).
+
+**Valores actuales:** 15 secciones — 1 `A. Motor y lubricación`, 2 `B. Sistema de enfriamiento`, 3 `C. Combustible y admisión`, 4 `D. Transmisión y transfer`, 5 `E. Diferenciales y tren de rodaje`, 6 `F. Sistema de dirección`, 7 `G. Sistema de suspeción`, 8 `H. Sistema de frenos`, 9 `I. Sistema de escape`, 10 `J. Sistema elétrico`, 11 `K. Aire acondicionado`, 12 `L. Parabrisas y limpia parabrisas`, 13 `M. Parte inferior`, 14 `N. Llantas y ruedas`, 15 `O. Prueba de manejo`.
+
+> **Observación:** Typos en los datos semilla: `suspeción` (→ `suspensión`) y `elétrico` (→ `eléctrico`). Varias descripciones tienen espacio al final (IDs 10, 13, 14).
+
+**`Catalogo.HojaInspeccionDetalleEstado`** — catálogo de posibles estados de un ítem de inspección.
+
+| Columna                          | Tipo          | Nulo | PK | Identity  | Descripción                     |
+|------------------------------------|---------------|------|----|-----------|-------------------------------------|
+| `HojaInspeccionDetalleEstadoID`    | `int`         | NO   | ✓  | ✓ (1,1)  | Identificador único del estado      |
+| `DescripcionEstado`                 | `varchar(50)` | NO   |    |           | Nombre/descripción del estado       |
+
+**Relaciones:** `Sistema.HojaInpeccionDetalle.HojaInspeccionDetalleEstadoID` la referencia (NO ACTION delete, CASCADE update).
+
+**Valores actuales:**
+
+| ID | DescripcionEstado |
+|----|-------------------|
+| 1  | Bien              |
+| 2  | Mal               |
+| 3  | No Aplica         |
 
 ---
 

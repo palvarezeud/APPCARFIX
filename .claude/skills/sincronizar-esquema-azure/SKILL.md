@@ -1,6 +1,6 @@
 # sincronizar-esquema-azure
 
-Compara el esquema y las tablas catalogo/configuracion entre la BD local (`localhost\SQL2022`) y la BD de Azure, y trae a **local** lo que falte o difiera. **Azure es la fuente de verdad** — esta skill nunca escribe en Azure, solo lee de ahi y aplica cambios en local.
+Compara el esquema y las tablas catalogo/configuracion entre la BD local (`(localdb)\MSSQLLocalDB`) y la BD de Azure, y trae a **local** lo que falte o difiera. **Azure es la fuente de verdad** — esta skill nunca escribe en Azure, solo lee de ahi y aplica cambios en local.
 
 Nace de dos casos reales de drift detectados en desarrollo: columnas `SubTotal`/`Pendiente` que existian en un entorno y no en el otro, y parametros (`HoraApertura`/`HoraCierre`/`ImpuestoVentas`) con valores distintos a los esperados. Correr esta skill al empezar una sesion de trabajo evita descubrir el drift a mitad de otra tarea.
 
@@ -73,7 +73,7 @@ WHERE c.TABLE_SCHEMA IN ('Catalogo','Sistema')
 ORDER BY c.TABLE_SCHEMA, c.TABLE_NAME, c.ORDINAL_POSITION;
 "@
 
-$colsLocal = Invoke-Sqlcmd -ServerInstance "localhost\SQL2022" -Database "CAR_FIX" -Query $qColumnas
+$colsLocal = Invoke-Sqlcmd -ServerInstance "(localdb)\MSSQLLocalDB" -Database "CAR_FIX" -Query $qColumnas
 $colsAzure = Invoke-Sqlcmd -ServerInstance $serverAzure -Database $dbAzure -Username $userAzure -Password $passAzure -Query $qColumnas
 ```
 
@@ -96,7 +96,7 @@ Columnas que estan en `$colsLocal` y no en `$colsAzure` → agregar a la lista d
 Mismo patron para cada una — `SELECT *` de ambos lados, comparar por la clave indicada, generar `INSERT` para lo que falte en local y `UPDATE` para lo que difiera. Ejemplo completo con `Parametros`:
 
 ```powershell
-$paramsLocal = Invoke-Sqlcmd -ServerInstance "localhost\SQL2022" -Database "CAR_FIX" -Query "SELECT Nombre, Valor FROM Catalogo.Parametros;"
+$paramsLocal = Invoke-Sqlcmd -ServerInstance "(localdb)\MSSQLLocalDB" -Database "CAR_FIX" -Query "SELECT Nombre, Valor FROM Catalogo.Parametros;"
 $paramsAzure = Invoke-Sqlcmd -ServerInstance $serverAzure -Database $dbAzure -Username $userAzure -Password $passAzure -Query "SELECT Nombre, Valor FROM Catalogo.Parametros;"
 ```
 
@@ -124,7 +124,7 @@ Si no hay ningun cambio detectado, decirlo explicitamente ("local ya esta sincro
 ### 5. Aplicar en local
 
 ```powershell
-Invoke-Sqlcmd -ServerInstance "localhost\SQL2022" -Database "CAR_FIX" -Query $scriptGenerado
+Invoke-Sqlcmd -ServerInstance "(localdb)\MSSQLLocalDB" -Database "CAR_FIX" -Query $scriptGenerado
 ```
 
 Volver a correr las comparaciones de los pasos 2-3 y confirmar que ya no quedan diffs pendientes (aparte de las advertencias local-only, que son esperadas y no se resuelven aqui).

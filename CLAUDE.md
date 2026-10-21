@@ -453,9 +453,9 @@ Los datos del encabezado de la factura (nombre, dirección, teléfonos, email) s
 
 ## 7. Base de Datos
 
-- **Servidor:** `localhost\SQL2022`
+- **Servidor:** `(localdb)\MSSQLLocalDB`
 - **Base de datos:** `CAR_FIX`
-- **Conexión:** `Server=localhost\SQL2022;Database=CAR_FIX;Integrated Security=True;TrustServerCertificate=True`
+- **Conexión:** `Server=(localdb)\MSSQLLocalDB;Database=CAR_FIX;Integrated Security=True;TrustServerCertificate=True`
 - **Esquema completo:** [`DATABASE_DOCUMENTATION.md`](.claude/DATABASE_DOCUMENTATION.md)
 
 ### Tablas principales

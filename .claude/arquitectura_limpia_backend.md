@@ -51,7 +51,7 @@ Los archivos generados van a `Infraestructura/Persistencia/Generado/` y **nunca 
 
 ```bash
 dotnet ef dbcontext scaffold \
-  "Server=localhost\SQL2022;Database=CAR_FIX;Integrated Security=True;TrustServerCertificate=True" \
+  "Server=(localdb)\MSSQLLocalDB;Database=CAR_FIX;Integrated Security=True;TrustServerCertificate=True" \
   Microsoft.EntityFrameworkCore.SqlServer \
   --output-dir Persistencia/Generado \
   --context-dir Persistencia \
@@ -749,7 +749,7 @@ app.Run();
 ```json
 {
   "ConnectionStrings": {
-    "CarFix": "Server=localhost\\SQL2022;Database=CAR_FIX;Integrated Security=True;TrustServerCertificate=True"
+    "CarFix": "Server=(localdb)\\MSSQLLocalDB;Database=CAR_FIX;Integrated Security=True;TrustServerCertificate=True"
   },
   "Jwt": {
     "Llave": "clave-secreta-minimo-32-caracteres-aqui",

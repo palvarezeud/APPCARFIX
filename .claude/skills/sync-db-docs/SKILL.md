@@ -1,6 +1,6 @@
 # sync-db-docs
 
-Conecta a la base de datos CAR_FIX en `localhost\SQL2022` y regenera `.claude/DATABASE_DOCUMENTATION.md` con el esquema actual.
+Conecta a la base de datos CAR_FIX en `(localdb)\MSSQLLocalDB` y regenera `.claude/DATABASE_DOCUMENTATION.md` con el esquema actual.
 
 ## Pasos
 
@@ -8,104 +8,122 @@ Conecta a la base de datos CAR_FIX en `localhost\SQL2022` y regenera `.claude/DA
 
 Ejecuta los siguientes bloques con `Invoke-Sqlcmd` (o `sqlcmd` si no está disponible el módulo). La cadena de conexión es:
 ```
-Server=localhost\SQL2022;Database=CAR_FIX;Integrated Security=True;TrustServerCertificate=True
+Server=(localdb)\MSSQLLocalDB;Database=CAR_FIX;Integrated Security=True;TrustServerCertificate=True
 ```
 
 Parámetros comunes para `Invoke-Sqlcmd`:
 ```powershell
-$server   = "localhost\SQL2022"
+$server   = "(localdb)\MSSQLLocalDB"
 $database = "CAR_FIX"
 ```
+
+> **Esquemas:** las tablas de la aplicación viven en los esquemas `Catalogo` (maestros y configuración) y `Sistema` (transaccionales), **no** en `dbo`. Todas las consultas filtran por esos dos esquemas y devuelven el nombre calificado `Esquema.Tabla`. `dbo.sysdiagrams` (creada por el diseñador de diagramas de SQL Server) queda excluida a propósito.
 
 #### 1.1 Tablas del usuario
 
 ```sql
 SELECT
-    t.TABLE_NAME,
-    t.TABLE_TYPE
-FROM INFORMATION_SCHEMA.TABLES t
-WHERE t.TABLE_SCHEMA = 'dbo'
-  AND t.TABLE_TYPE = 'BASE TABLE'
-ORDER BY t.TABLE_NAME;
+    s.name + '.' + t.name AS Tabla
+FROM sys.tables t
+JOIN sys.schemas s ON s.schema_id = t.schema_id
+WHERE s.name IN ('Catalogo', 'Sistema')
+ORDER BY s.name, t.name;
 ```
 
-#### 1.2 Columnas de cada tabla
+#### 1.2 Columnas de cada tabla (tipo, nulabilidad, PK, identity y default en una sola consulta)
 
 ```sql
 SELECT
-    c.TABLE_NAME,
-    c.COLUMN_NAME,
-    c.DATA_TYPE,
-    c.CHARACTER_MAXIMUM_LENGTH,
-    c.NUMERIC_PRECISION,
-    c.NUMERIC_SCALE,
-    c.IS_NULLABLE,
-    c.COLUMN_DEFAULT,
-    c.ORDINAL_POSITION,
-    COLUMNPROPERTY(OBJECT_ID(c.TABLE_SCHEMA + '.' + c.TABLE_NAME), c.COLUMN_NAME, 'IsIdentity') AS IsIdentity
-FROM INFORMATION_SCHEMA.COLUMNS c
-WHERE c.TABLE_SCHEMA = 'dbo'
-ORDER BY c.TABLE_NAME, c.ORDINAL_POSITION;
+    s.name + '.' + t.name AS Tabla,
+    c.column_id           AS Orden,
+    c.name                AS Columna,
+    ty.name + CASE
+        WHEN ty.name IN ('varchar', 'char', 'varbinary', 'binary')
+            THEN '(' + CASE WHEN c.max_length = -1 THEN 'MAX' ELSE CAST(c.max_length AS varchar) END + ')'
+        WHEN ty.name IN ('nvarchar', 'nchar')
+            THEN '(' + CASE WHEN c.max_length = -1 THEN 'MAX' ELSE CAST(c.max_length / 2 AS varchar) END + ')'
+        WHEN ty.name IN ('decimal', 'numeric')
+            THEN '(' + CAST(c.precision AS varchar) + ',' + CAST(c.scale AS varchar) + ')'
+        ELSE ''
+    END                   AS Tipo,
+    CASE WHEN c.is_nullable = 1 THEN 'YES' ELSE 'NO' END AS Nulo,
+    CASE WHEN pk.column_id IS NOT NULL THEN 'PK' ELSE '' END AS PK,
+    CASE WHEN ic.column_id IS NOT NULL
+        THEN '(' + CAST(ic.seed_value AS varchar) + ',' + CAST(ic.increment_value AS varchar) + ')'
+        ELSE '' END       AS Identidad,
+    ISNULL(dc.definition, '') AS ValorDefault
+FROM sys.tables t
+JOIN sys.schemas s  ON s.schema_id = t.schema_id
+JOIN sys.columns c  ON c.object_id = t.object_id
+JOIN sys.types   ty ON ty.user_type_id = c.user_type_id
+LEFT JOIN sys.identity_columns    ic ON ic.object_id = c.object_id AND ic.column_id = c.column_id
+LEFT JOIN sys.default_constraints dc ON dc.parent_object_id = c.object_id AND dc.parent_column_id = c.column_id
+LEFT JOIN (
+    SELECT icx.object_id, icx.column_id
+    FROM sys.indexes i
+    JOIN sys.index_columns icx ON icx.object_id = i.object_id AND icx.index_id = i.index_id
+    WHERE i.is_primary_key = 1
+) pk ON pk.object_id = c.object_id AND pk.column_id = c.column_id
+WHERE s.name IN ('Catalogo', 'Sistema')
+ORDER BY Tabla, c.column_id;
 ```
 
-#### 1.3 Claves primarias
+#### 1.3 Nombres de las claves primarias
 
 ```sql
 SELECT
-    tc.TABLE_NAME,
-    kcu.COLUMN_NAME,
-    tc.CONSTRAINT_NAME
-FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
-JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
-    ON tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME
-   AND tc.TABLE_SCHEMA    = kcu.TABLE_SCHEMA
-WHERE tc.CONSTRAINT_TYPE = 'PRIMARY KEY'
-  AND tc.TABLE_SCHEMA    = 'dbo'
-ORDER BY tc.TABLE_NAME, kcu.ORDINAL_POSITION;
+    s.name + '.' + t.name AS Tabla,
+    i.name                AS ConstraintPK
+FROM sys.indexes i
+JOIN sys.tables  t ON t.object_id = i.object_id
+JOIN sys.schemas s ON s.schema_id = t.schema_id
+WHERE i.is_primary_key = 1
+  AND s.name IN ('Catalogo', 'Sistema')
+ORDER BY Tabla;
 ```
 
 #### 1.4 Claves foráneas con DELETE/UPDATE rules
 
 ```sql
 SELECT
-    fk.name                          AS FK_Name,
-    tp.name                          AS Parent_Table,
-    cp.name                          AS Parent_Column,
-    tr.name                          AS Referenced_Table,
-    cr.name                          AS Referenced_Column,
-    fk.delete_referential_action_desc AS On_Delete,
-    fk.update_referential_action_desc AS On_Update
+    fk.name                            AS FK_Name,
+    sp.name + '.' + tp.name            AS Tabla_Hija,
+    cp.name                            AS Columna_Hija,
+    sr.name + '.' + tr.name            AS Tabla_Padre,
+    cr.name                            AS Columna_Padre,
+    fk.delete_referential_action_desc  AS On_Delete,
+    fk.update_referential_action_desc  AS On_Update
 FROM sys.foreign_keys fk
 JOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id
-JOIN sys.tables  tp ON fkc.parent_object_id      = tp.object_id
-JOIN sys.columns cp ON fkc.parent_object_id      = cp.object_id
-                    AND fkc.parent_column_id      = cp.column_id
-JOIN sys.tables  tr ON fkc.referenced_object_id  = tr.object_id
-JOIN sys.columns cr ON fkc.referenced_object_id  = cr.object_id
-                    AND fkc.referenced_column_id  = cr.column_id
-ORDER BY tp.name, cp.name;
+JOIN sys.tables  tp ON fkc.parent_object_id     = tp.object_id
+JOIN sys.schemas sp ON sp.schema_id             = tp.schema_id
+JOIN sys.columns cp ON fkc.parent_object_id     = cp.object_id
+                   AND fkc.parent_column_id     = cp.column_id
+JOIN sys.tables  tr ON fkc.referenced_object_id = tr.object_id
+JOIN sys.schemas sr ON sr.schema_id             = tr.schema_id
+JOIN sys.columns cr ON fkc.referenced_object_id = cr.object_id
+                   AND fkc.referenced_column_id = cr.column_id
+ORDER BY Tabla_Hija, Columna_Hija;
 ```
 
-#### 1.5 Valores semilla de columnas IDENTITY
+#### 1.5 Valores de las tablas catálogo (para documentar estados y semillas)
 
 ```sql
-SELECT
-    OBJECT_NAME(object_id) AS TABLE_NAME,
-    name                   AS COLUMN_NAME,
-    seed_value,
-    increment_value
-FROM sys.identity_columns
-ORDER BY TABLE_NAME;
-```
-
-#### 1.6 Valores de las tablas catálogo (para documentar estados)
-
-```sql
-SELECT 'EstadoOrden'    AS Tabla, CAST(EstadoOrdenID AS varchar) AS ID, Descripcion AS Valor FROM EstadoOrden
+SELECT 'EstadoOrden'                 AS Tabla, EstadoOrdenID                 AS ID, Descripcion                          AS Valor FROM Catalogo.EstadoOrden
 UNION ALL
-SELECT 'EstadoFactura'  AS Tabla, CAST(EstadoFacturaID AS varchar), Descipcion FROM EstadoFactura
+SELECT 'EstadoFactura',                        EstadoFacturaID,                     RTRIM(Descipcion)                              FROM Catalogo.EstadoFactura
+UNION ALL
+SELECT 'Roles',                                RolID,                               Nombre + ' / ' + ISNULL(Descripcion, '')       FROM Catalogo.Roles
+UNION ALL
+SELECT 'Parametros',                           ParametroID,                         Nombre + ' = ' + Valor                         FROM Catalogo.Parametros
+UNION ALL
+SELECT 'HojaInspeccionDetalleEstado',          HojaInspeccionDetalleEstadoID,       DescripcionEstado                              FROM Catalogo.HojaInspeccionDetalleEstado
+UNION ALL
+SELECT 'HojaInspeccionSeccion',                HojaInspeccionSeccionID,             DescripcionSeccion                             FROM Catalogo.HojaInspeccionSeccion
 ORDER BY Tabla, ID;
 ```
+
+Si alguna de estas tablas ya no existe (la consulta 1.1 no la lista), quitar su `UNION ALL` antes de ejecutar. Para catálogos grandes (ej. `Catalogo.MarcaModelo`) documentar solo el conteo (`SELECT COUNT(*) FROM Catalogo.MarcaModelo`), no las filas.
 
 ### 2. Actualizar el documento
 
@@ -138,7 +156,7 @@ Reemplazar el contenido entre `## Tablas` y `## Flujo de Negocio` con el esquema
 
 [por cada tabla, orden: primero transaccionales, luego catálogos]
 
-### `NombreTabla`
+### `Esquema.NombreTabla`
 
 [descripción de una línea de qué almacena]
 
@@ -156,6 +174,7 @@ Reemplazar el contenido entre `## Tablas` y `## Flujo de Negocio` con el esquema
 ### 3. Reglas al escribir
 
 - Actualizar la fecha en el encabezado `> **Fecha de análisis:**` a la fecha de hoy (YYYY-MM-DD).
+- Nombrar las tablas siempre calificadas con su esquema (`Catalogo.Clientes`, `Sistema.Facturas`).
 - Para el tipo de columna, incluir longitud/precisión real: `varchar(250)`, `money`, `tinyint`, etc.
 - Identity: mostrar `✓ (seed,inc)` si aplica, vacío si no.
 - Si una FK no tiene constraint en la BD, indicarlo como "FK lógica".

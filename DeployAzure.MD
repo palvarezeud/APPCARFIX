@@ -120,7 +120,7 @@ Server=tcp:appcarfixinstance.database.windows.net,1433;Initial Catalog=appcarfix
 ```
 
 - `Encrypt=True` + `TrustServerCertificate=False` es lo correcto para Azure SQL (a diferencia de la
-  cadena local con `SQL2022`, que usa `TrustServerCertificate=True` por el certificado autofirmado).
+  cadena local con `(localdb)\MSSQLLocalDB`, que usa `TrustServerCertificate=True` por el certificado autofirmado).
 - Para probar el backend **localmente** contra esta misma Azure SQL Database antes de publicar:
   ```
   dotnet user-secrets set "ConnectionStrings:CarFix" "<cadena completa>" --project Backend/WebApi/CarFix.WebApi
