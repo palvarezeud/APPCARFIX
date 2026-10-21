@@ -2,6 +2,8 @@
 appCarFix.PublishSettings
 *.PublishSettings
 docs/
+# Respaldo local de dotnet user-secrets
+secrets/
 
 # Certificados de desarrollo autofirmados (se regeneran con la skill arrancar-app)
 dev-certs/
