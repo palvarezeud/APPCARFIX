@@ -23,7 +23,7 @@
                     │                                       ▼
 ┌───────────────────────────────┐   HTTPS /api   ┌───────────────────────────────┐   TDS 1433   ┌──────────────────────────┐
 │ Azure Static Web Apps         │ ─────────────▶ │ Azure App Service             │ ───────────▶ │ Azure SQL Database       │
-│ appCarFixWeb (Free, East US 2)│   CORS         │ appCarFix (.NET 10, F1 Free,  │  SQL Auth    │ appcarfixdb              │
+│ appCarFixWeb (Free, East US 2)│   CORS         │ appCarFix (.NET 10, F1 Free,  │  SQL Auth    │ appcarfixdb2             │
 │ Angular 21 (archivos estaticos)│                │ Windows, Canada East)         │              │ (Serverless GP_S_Gen5,   │
 └───────────────────────────────┘                └───────────────────────────────┘              │  1 vCore, Canada Central)│
                                                         │                                       └──────────────────────────┘
@@ -38,10 +38,11 @@
 | App Service (backend) | `appCarFix` | runtime .NET 10, HTTPS Only | Canada East | `https://appcarfix-hdeyb4dncbdwbchg.canadaeast-01.azurewebsites.net` |
 | Static Web App (frontend) | `appCarFixWeb` | Free | East US 2 | `https://icy-wave-040fef60f.7.azurestaticapps.net` |
 | Azure SQL Server (logico) | `appcarfixinstance` | — | Canada Central | `appcarfixinstance.database.windows.net` |
-| Azure SQL Database | `appcarfixdb` | General Purpose Serverless, Gen5, 1 vCore | Canada Central | — |
+| Azure SQL Database (en uso) | `appcarfixdb2` | General Purpose Serverless, Gen5, 1 vCore | Canada Central | — |
+| Azure SQL Database (original) | `appcarfixdb` | General Purpose Serverless, Gen5, 1 vCore | Canada Central | — |
 | Usuario SQL de la app | `appcarfixuser` | SQL Authentication | — | — |
 
-> Existe tambien `appcarfixdb2` en el mismo servidor; la app **no** la usa (la connection string `CarFix` apunta a `appcarfixdb`). No tocarla sin confirmar con el usuario.
+> **La app usa `appcarfixdb2`** (verificado el 2026-10-21 leyendo la connection string `CarFix` del App Service). `appcarfixdb` fue la BD original (la que menciona `DeployAzure.MD`); no tocarla sin confirmar con el usuario. Ante la duda, consultar siempre la connection string real en vez de asumir el nombre.
 
 **Por que regiones distintas:** Static Web Apps no esta disponible en Canada East/Central, por eso el frontend esta en East US 2. No es un problema: el frontend son archivos estaticos servidos por CDN; la latencia relevante es App Service ↔ SQL (ambos en Canada).
 
@@ -114,14 +115,14 @@ ALTER ROLE db_datawriter ADD MEMBER appusuario;
 - **Database First:** el esquema se crea con scripts SQL (ver `Documentacion/ESTANDAR_BASE_DATOS.md`); EF Core no ejecuta migraciones.
 - Los cambios de esquema se aplican en Azure **a mano y con confirmacion explicita del usuario** — ninguna skill escribe en la BD de Azure. Scripts versionados en `Backend/Scripts/sql/AAAA-MM-DD_*.sql`.
 - **Azure es la fuente de verdad** de esquema y catalogos. La skill `/sincronizar-esquema-azure` compara Azure vs LocalDB y trae a **local** lo que falte (columnas de `Catalogo`/`Sistema` y las tablas `Parametros`, `EstadoOrden`, `EstadoFactura`, `Roles`, `Taller`). Nunca escribe en Azure.
-- `appcarfixdb` contiene **datos reales**: no usarla como sandbox para pruebas destructivas.
+- `appcarfixdb2` (BD en uso) contiene **datos reales**: no usarla como sandbox para pruebas destructivas.
 
 ### 3.3 Connection string
 
 Formato ADO.NET de Azure SQL (la contrasenna nunca va al repo):
 
 ```
-Server=tcp:appcarfixinstance.database.windows.net,1433;Initial Catalog=appcarfixdb;Persist Security Info=False;User ID=appcarfixuser;Password=<secreto>;MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;
+Server=tcp:appcarfixinstance.database.windows.net,1433;Initial Catalog=appcarfixdb2;Persist Security Info=False;User ID=appcarfixuser;Password=<secreto>;MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;
 ```
 
 - `Encrypt=True;TrustServerCertificate=False` en Azure (local usa `TrustServerCertificate=True` por LocalDB).
@@ -341,4 +342,4 @@ curl -s "https://icy-wave-040fef60f.7.azurestaticapps.net/" | grep -o 'main-[a-z
 4. No desplegar codigo que no compila; limpiar siempre `publish-tmp`/`publish.zip`.
 5. Ante un 500.30, leer el log de Serilog via Kudu antes de suponer la causa.
 6. Ante un error de CORS, revisar primero la capa de plataforma del Portal.
-7. `appcarfixdb` tiene datos reales: pruebas destructivas solo en LocalDB.
+7. `appcarfixdb2` (BD en uso) tiene datos reales: pruebas destructivas solo en LocalDB.
